@@ -1,4 +1,5 @@
 import { BaseLayer, Stage } from "../../core/types";
+import type { ParamSpec } from "../../settings/types";
 import type { Scene } from "../../core/Scene";
 
 export interface SparksOptions {
@@ -24,6 +25,7 @@ interface Spark {
 export class SparksLayer extends BaseLayer {
     readonly id = "effects.sparks";
     readonly stage = Stage.Particles;
+    readonly title = "Искры";
     readonly options: SparksOptions;
 
     private readonly sparks: Spark[] = [];
@@ -32,6 +34,38 @@ export class SparksLayer extends BaseLayer {
     constructor(options: Partial<SparksOptions> = {}) {
         super();
         this.options = { count: 7, velocityCount: 13, gravity: 430, drag: 1.9, ...options };
+    }
+
+    override params(): ParamSpec[] {
+        const o = this.options;
+        return [
+            {
+                type: "number",
+                key: "count",
+                label: "Искр на ноту",
+                group: "effects",
+                min: 0,
+                max: 24,
+                step: 1,
+                get: () => o.count,
+                set: (value) => {
+                    o.count = Math.round(value);
+                }
+            },
+            {
+                type: "number",
+                key: "gravity",
+                label: "Гравитация искр",
+                group: "effects",
+                min: 100,
+                max: 900,
+                step: 25,
+                get: () => o.gravity,
+                set: (value) => {
+                    o.gravity = value;
+                }
+            }
+        ];
     }
 
     override init(scene: Scene): void {

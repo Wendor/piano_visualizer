@@ -10,6 +10,8 @@ export interface BackgroundOptions {
 export class BackgroundLayer extends BaseLayer {
     readonly id = "background";
     readonly stage = Stage.Background;
+    readonly title = "Фон";
+    readonly toggleable = false;
     private readonly options: BackgroundOptions;
 
     constructor(options: Partial<BackgroundOptions> = {}) {

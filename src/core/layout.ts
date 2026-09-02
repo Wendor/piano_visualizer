@@ -62,7 +62,7 @@ export const DEFAULT_LAYOUT_OPTIONS: LayoutOptions = {
 };
 
 /** Диапазоны для узких экранов: 88 → 76 → 61 → 49 клавиш. */
-const RANGE_STEPS: ReadonlyArray<readonly [number, number]> = [
+export const RANGE_STEPS: ReadonlyArray<readonly [number, number]> = [
     [21, 108],
     [28, 103],
     [36, 96],
@@ -96,6 +96,11 @@ export class KeyboardLayout {
     private byMidi = new Map<number, PianoKey>();
 
     constructor(private options: LayoutOptions = { ...DEFAULT_LAYOUT_OPTIONS }) {}
+
+    /** Текущие настройки геометрии — их читает панель настроек. */
+    get settings(): Readonly<LayoutOptions> {
+        return this.options;
+    }
 
     configure(patch: Partial<LayoutOptions>): void {
         this.options = { ...this.options, ...patch };

@@ -4,6 +4,9 @@ import { Scene } from "./Scene";
 import type { Layer, Viewport } from "./types";
 import type { InputSource } from "../input/types";
 
+/** Слой добавлен (`added = true`) или удалён. */
+export type LayerHook = (layer: Layer, added: boolean) => void;
+
 export interface VisualizerOptions {
     canvas: HTMLCanvasElement;
     /** Потолок devicePixelRatio: 2 хватает и на Retina. */
@@ -27,6 +30,7 @@ export class Visualizer {
     private frame = 0;
     private lastTime = 0;
     private running = false;
+    private readonly layerHooks = new Set<LayerHook>();
     private readonly onResize = () => this.resize();
 
     constructor(options: VisualizerOptions) {
@@ -45,7 +49,17 @@ export class Visualizer {
         this.layerList.sort((a, b) => a.stage - b.stage);
         layer.init?.(this.scene);
         if (this.scene.viewport.width > 0) layer.resize?.(this.scene);
+        for (const hook of this.layerHooks) hook(layer, true);
         return this;
+    }
+
+    /**
+     * Уведомление о появлении и уходе слоёв: так реестр настроек подхватывает
+     * параметры слоя, добавленного уже после старта.
+     */
+    onLayerChange(hook: LayerHook): () => void {
+        this.layerHooks.add(hook);
+        return () => this.layerHooks.delete(hook);
     }
 
     addLayers(list: readonly Layer[]): this {
@@ -56,8 +70,10 @@ export class Visualizer {
     removeLayer(id: string): boolean {
         const index = this.layerList.findIndex((layer) => layer.id === id);
         if (index < 0) return false;
-        this.layerList[index]?.dispose?.();
+        const layer = this.layerList[index]!;
+        layer.dispose?.();
         this.layerList.splice(index, 1);
+        for (const hook of this.layerHooks) hook(layer, false);
         return true;
     }
 

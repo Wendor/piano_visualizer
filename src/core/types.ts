@@ -1,4 +1,5 @@
 import type { Scene } from "./Scene";
+import type { ParamSpec } from "../settings/types";
 
 export interface Viewport {
     width: number;
@@ -32,6 +33,12 @@ export interface Layer {
     readonly id: string;
     readonly stage: StageValue;
     enabled: boolean;
+    /** Имя для панели настроек; по умолчанию — id. */
+    readonly title?: string;
+    /** Можно ли выключать слой из панели. Фон, ноты и клавиатура — нет. */
+    readonly toggleable?: boolean;
+    /** Настраиваемые параметры слоя. */
+    params?(): ParamSpec[];
     init?(scene: Scene): void;
     resize?(scene: Scene): void;
     update?(scene: Scene, dt: number): void;
@@ -45,6 +52,10 @@ export abstract class BaseLayer implements Layer {
     enabled = true;
     abstract readonly id: string;
     abstract readonly stage: StageValue;
+
+    params(): ParamSpec[] {
+        return [];
+    }
 
     init(_scene: Scene): void {}
     resize(_scene: Scene): void {}

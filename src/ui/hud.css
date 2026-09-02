@@ -116,6 +116,26 @@ canvas {
     color: rgba(255, 255, 255, 0.92);
 }
 
+.settings__list {
+    max-height: min(62vh, 520px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.settings__group {
+    margin: 10px 0 4px;
+    padding: 0 8px;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.settings__group:first-child {
+    margin-top: 0;
+}
+
 .settings__row {
     display: flex;
     justify-content: space-between;

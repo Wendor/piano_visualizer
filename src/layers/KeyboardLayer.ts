@@ -18,6 +18,8 @@ export interface KeyboardOptions {
 export class KeyboardLayer extends BaseLayer {
     readonly id = "keyboard";
     readonly stage = Stage.Keyboard;
+    readonly title = "Клавиатура";
+    readonly toggleable = false;
     readonly options: KeyboardOptions;
 
     private readonly whiteCache = document.createElement("canvas");

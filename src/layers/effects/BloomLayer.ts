@@ -2,6 +2,8 @@ import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
 import type { GlowBuffer } from "../../core/GlowBuffer";
 import { clamp } from "../../core/math";
+import type { ParamSpec } from "../../settings/types";
+import { percent } from "../../settings/types";
 
 export interface BloomPass {
     blur: number;
@@ -25,6 +27,7 @@ const supportsFilter = ((): boolean => {
 export class BloomLayer extends BaseLayer {
     readonly id = "effects.bloom";
     readonly stage = Stage.Bloom;
+    readonly title = "Свечение";
     readonly options: BloomOptions;
 
     constructor(
@@ -41,6 +44,23 @@ export class BloomLayer extends BaseLayer {
             ],
             ...options
         };
+    }
+
+    override params(): ParamSpec[] {
+        return [
+            {
+                type: "number",
+                key: "strength",
+                label: "Сила свечения",
+                group: "effects",
+                min: 0,
+                max: 2,
+                step: 0.1,
+                format: percent,
+                get: () => this.options.strength,
+                set: (value) => this.setStrength(value)
+            }
+        ];
     }
 
     setStrength(value: number): number {

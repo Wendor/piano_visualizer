@@ -1,4 +1,6 @@
 import { BaseLayer, Stage } from "../../core/types";
+import type { ParamSpec } from "../../settings/types";
+import { percent } from "../../settings/types";
 import type { Scene, NoteEvent } from "../../core/Scene";
 import { roundRectPath } from "../../core/math";
 
@@ -32,6 +34,8 @@ interface Bar {
 export class RisingNotesLayer extends BaseLayer {
     readonly id = "notes.rising";
     readonly stage = Stage.Notes;
+    readonly title = "Ноты";
+    readonly toggleable = false;
     readonly options: RisingNotesOptions;
 
     private bars: Bar[] = [];
@@ -39,6 +43,65 @@ export class RisingNotesLayer extends BaseLayer {
     constructor(options: Partial<RisingNotesOptions> = {}) {
         super();
         this.options = { speed: 240, gap: 0.1, hollowNaturals: true, roundness: 0.4, ...options };
+    }
+
+    override params(): ParamSpec[] {
+        const o = this.options;
+        return [
+            {
+                type: "number",
+                key: "speed",
+                label: "Скорость нот",
+                group: "notes",
+                min: 80,
+                max: 600,
+                step: 20,
+                format: (value) => `${Math.round(value)} px/с`,
+                get: () => o.speed,
+                set: (value) => {
+                    o.speed = value;
+                }
+            },
+            {
+                type: "boolean",
+                key: "hollowNaturals",
+                label: "Натуральные ноты",
+                group: "notes",
+                labels: ["контур", "заливка"],
+                get: () => o.hollowNaturals,
+                set: (value) => {
+                    o.hollowNaturals = value;
+                }
+            },
+            {
+                type: "number",
+                key: "roundness",
+                label: "Скругление",
+                group: "notes",
+                min: 0,
+                max: 0.5,
+                step: 0.05,
+                format: percent,
+                get: () => o.roundness,
+                set: (value) => {
+                    o.roundness = value;
+                }
+            },
+            {
+                type: "number",
+                key: "gap",
+                label: "Зазор между нотами",
+                group: "notes",
+                min: 0,
+                max: 0.3,
+                step: 0.02,
+                format: percent,
+                get: () => o.gap,
+                set: (value) => {
+                    o.gap = value;
+                }
+            }
+        ];
     }
 
     override init(scene: Scene): void {

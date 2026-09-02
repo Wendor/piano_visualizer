@@ -1,4 +1,5 @@
 import { BaseLayer, Stage } from "../../core/types";
+import type { ParamSpec } from "../../settings/types";
 import type { Scene } from "../../core/Scene";
 
 export interface KeyLightOptions {
@@ -12,6 +13,7 @@ export interface KeyLightOptions {
 export class KeyLightLayer extends BaseLayer {
     readonly id = "effects.keyLight";
     readonly stage = Stage.Particles;
+    readonly title = "Свет клавиш";
     readonly options: KeyLightOptions;
 
     private readonly flash = new Map<number, number>();
@@ -20,6 +22,40 @@ export class KeyLightLayer extends BaseLayer {
     constructor(options: Partial<KeyLightOptions> = {}) {
         super();
         this.options = { decay: 4.5, spread: 2, ...options };
+    }
+
+    override params(): ParamSpec[] {
+        const o = this.options;
+        return [
+            {
+                type: "number",
+                key: "decay",
+                label: "Затухание вспышки",
+                group: "effects",
+                min: 1,
+                max: 12,
+                step: 0.5,
+                format: (value) => value.toFixed(1),
+                get: () => o.decay,
+                set: (value) => {
+                    o.decay = value;
+                }
+            },
+            {
+                type: "number",
+                key: "spread",
+                label: "Ширина ореола",
+                group: "effects",
+                min: 1,
+                max: 5,
+                step: 0.25,
+                format: (value) => value.toFixed(2),
+                get: () => o.spread,
+                set: (value) => {
+                    o.spread = value;
+                }
+            }
+        ];
     }
 
     override init(scene: Scene): void {

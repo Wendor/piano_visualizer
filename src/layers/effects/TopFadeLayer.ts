@@ -1,17 +1,46 @@
 import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
+import type { ParamSpec } from "../../settings/types";
+
+export interface TopFadeOptions {
+    /** Предельная высота затемнения у верхней кромки, px. */
+    maxHeight: number;
+}
 
 /** Ноты уходят в темноту у верхней кромки, а не обрезаются на полуслове. */
 export class TopFadeLayer extends BaseLayer {
     readonly id = "effects.topFade";
     readonly stage = Stage.Atmosphere;
+    readonly title = "Затемнение сверху";
+    readonly options: TopFadeOptions;
 
-    constructor(private readonly maxHeight = 170) {
+    constructor(options: Partial<TopFadeOptions> = {}) {
         super();
+        this.options = { maxHeight: 170, ...options };
+    }
+
+    override params(): ParamSpec[] {
+        const o = this.options;
+        return [
+            {
+                type: "number",
+                key: "maxHeight",
+                label: "Высота затемнения",
+                group: "effects",
+                min: 0,
+                max: 400,
+                step: 10,
+                format: (value) => `${Math.round(value)} px`,
+                get: () => o.maxHeight,
+                set: (value) => {
+                    o.maxHeight = value;
+                }
+            }
+        ];
     }
 
     override draw(g: CanvasRenderingContext2D, scene: Scene): void {
-        const height = Math.min(this.maxHeight, scene.layout.top * 0.35);
+        const height = Math.min(this.options.maxHeight, scene.layout.top * 0.35);
         if (height <= 0) return;
 
         const background = scene.theme.palette.background;

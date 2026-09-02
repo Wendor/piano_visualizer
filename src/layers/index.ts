@@ -24,8 +24,8 @@ export function registerBuiltinLayers(): void {
         .register("effects.sparks", (_c, o) => new SparksLayer(o as never))
         .register("effects.keyLight", (_c, o) => new KeyLightLayer(o as never))
         .register("effects.bloom", (c, o) => new BloomLayer(c.visualizer.glow, o as never))
-        .register("effects.topFade", (_c, o) => new TopFadeLayer((o?.["maxHeight"] as number) ?? 170))
-        .register("effects.strikeLine", (_c, o) => new StrikeLineLayer((o?.["height"] as number) ?? 8))
+        .register("effects.topFade", (_c, o) => new TopFadeLayer(o as never))
+        .register("effects.strikeLine", (_c, o) => new StrikeLineLayer(o as never))
         .register("keyboard", (_c, o) => new KeyboardLayer(o as never));
 }
 
