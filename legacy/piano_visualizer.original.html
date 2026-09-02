@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI Timeline Visualizer (Fixed Geometry)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            color: #fff;
+            font-family: sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 14px;
+            pointer-events: none;
+            text-shadow: 0 0 5px #000;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Ожидание MIDI. Можно нажимать на клавиатуре: A, W, S, E, D, F, T, G, Y, H, U, J, K</div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const info = document.getElementById('info');
+
+        let width, height;
+        
+        const activeNotesMap = new Map();
+        const fallingNotesArr = [];
+
+        // Карта для обычной клавиатуры ПК (для теста)
+        const keyToNoteMap = {
+            'a': 60, 'w': 61, 's': 62, 'e': 63, 'd': 64, 'f': 65,
+            't': 66, 'g': 67, 'y': 68, 'h': 69, 'u': 70, 'j': 71, 'k': 72
+        };
+
+        const KEYBOARD_HEIGHT = 100;
+        const NOTE_START_OFFSET = 21; // Начинаем с A0
+        const TOTAL_KEYS = 88;
+        const SCROLL_SPEED = 350;
+
+        // Предрасчет структуры 88-клавишной клавиатуры (A0-C8)
+        const keyArray = [];
+        for (let i = 0; i < TOTAL_KEYS; i++) {
+            const midiNote = i + NOTE_START_OFFSET;
+            // Определяем, является ли нота черной (диезом/бемолем)
+            const isBlack = [1, 3, 6, 8, 10].includes(midiNote % 12);
+            keyArray.push({ midiNote, isBlack });
+        }
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            drawPianoKeyboard(activeNotesMap); // Перерисовать клавиатуру сразу при изменении размера
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- Обработка ввода ---
+
+        // ПК клавиатура
+        window.addEventListener('keydown', (e) => {
+            if (e.repeat) return;
+            const note = keyToNoteMap[e.key.toLowerCase()];
+            if (note !== undefined) noteOn(note, 100);
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const note = keyToNoteMap[e.key.toLowerCase()];
+            if (note !== undefined) noteOff(note);
+        });
+
+        // MIDI
+        if (navigator.requestMIDIAccess) {
+            navigator.requestMIDIAccess().then(onMIDISuccess, onMIDIFailure);
+        } else {
+            info.innerText += '\nWeb MIDI API не поддерживается.';
+        }
+
+        function onMIDISuccess(midiAccess) {
+            const inputs = midiAccess.inputs.values();
+            for (let input of inputs) {
+                input.onmidimessage = getMIDIMessage;
+            }
+            midiAccess.onstatechange = (e) => {
+                if (e.port.state === 'connected') {
+                    e.port.onmidimessage = getMIDIMessage;
+                    info.innerText = 'MIDI подключено: ' + e.port.name;
+                }
+            };
+        }
+
+        function onMIDIFailure() { console.warn('Не удалось получить доступ к MIDI.'); }
+
+        function getMIDIMessage(message) {
+            const command = message.data[0];
+            const note = message.data[1];
+            const velocity = message.data.length > 2 ? message.data[2] : 0;
+            if (command === 144 && velocity > 0) noteOn(note, velocity);
+            if (command === 128 || (command === 144 && velocity === 0)) noteOff(note);
+        }
+
+        // Логика нот
+        function noteOn(note, velocity) {
+            activeNotesMap.set(note, velocity);
+            // Создание падающей ноты
+            fallingNotesArr.push({ note, velocity, startTime: performance.now(), endTime: null, active: true });
+        }
+
+        function noteOff(note) {
+            activeNotesMap.delete(note);
+            // Завершение падающей ноты
+            const index = fallingNotesArr.findLastIndex(n => n.note === note && n.active);
+            if (index !== -1) {
+                fallingNotesArr[index].endTime = performance.now();
+                fallingNotesArr[index].active = false;
+            }
+        }
+
+        // --- Геометрия клавиш ---
+
+        // Получить X и W для основания любой ноты (белой или черной)
+        function getKeyBaseRect(midiNote) {
+            if (midiNote < NOTE_START_OFFSET || midiNote >= NOTE_START_OFFSET + TOTAL_KEYS) return null;
+            const index = midiNote - NOTE_START_OFFSET;
+            const keyWidth = width / TOTAL_KEYS; // Вся ширина / 88, для оснований одинаково
+            return {
+                midiNote,
+                isBlack: keyArray[index].isBlack,
+                x: index * keyWidth,
+                w: keyWidth
+            };
+        }
+
+        function getNoteColor(note, velocity = 127) {
+            const hue = (note % 12) * 30; // Уникальный цвет для каждой из 12 нот октавы
+            const lightness = 40 + (velocity / 127) * 20;
+            return `hsl(${hue}, 100%, ${lightness}%)`;
+        }
+
+        // --- Отрисовка ---
+
+        // Рисование клавиатуры (исправлено)
+        function drawPianoKeyboard(currentActiveNotesMap) {
+            const ky = height - KEYBOARD_HEIGHT;
+            const keyWidth = width / TOTAL_KEYS;
+            
+            ctx.save();
+            
+            // --- Слой 1: Основания (все одной ширины, светло-серые) ---
+            ctx.fillStyle = '#ddd'; // Светло-серый для белых оснований
+            for (let i = 0; i < TOTAL_KEYS; i++) {
+                ctx.fillRect(i * keyWidth + 0.5, ky, keyWidth - 1, KEYBOARD_HEIGHT);
+            }
+            
+            // --- Слой 2: Черные вершины (поверх оснований, узкие) ---
+            ctx.fillStyle = '#111'; // Черный для вершин черных клавиш
+            const blackKeyWidth = keyWidth * 0.6; // Видимая часть черной клавиши
+            const blackKeyXOffset = (keyWidth - blackKeyWidth) / 2;
+            for (let i = 0; i < TOTAL_KEYS; i++) {
+                const props = keyArray[i];
+                if (props.isBlack) {
+                    ctx.fillRect(i * keyWidth + blackKeyXOffset, ky, blackKeyWidth, KEYBOARD_HEIGHT * 0.6);
+                }
+            }
+
+            // --- Слой 3: Подсветка НАЖАТЫХ нот (идеально сопоставленных, никаких перекрытий) ---
+            ctx.globalCompositeOperation = 'lighter';
+            for (const [note, velocity] of currentActiveNotesMap.entries()) {
+                if (note < NOTE_START_OFFSET || note >= NOTE_START_OFFSET + TOTAL_KEYS) continue;
+                
+                const i = note - NOTE_START_OFFSET;
+                const props = keyArray[i];
+                const color = getNoteColor(note, velocity);
+                
+                ctx.fillStyle = color;
+                ctx.shadowBlur = 25;
+                ctx.shadowColor = color;
+                
+                if (props.isBlack) {
+                    // Подсветить узкую черную вершину
+                    ctx.fillRect(i * keyWidth + blackKeyXOffset, ky, blackKeyWidth, KEYBOARD_HEIGHT * 0.6);
+                } else {
+                    // Подсветить широкое основание белой клавиши (никакого заступа на черные)
+                    ctx.fillRect(i * keyWidth + 0.5, ky, keyWidth - 1, KEYBOARD_HEIGHT);
+                }
+                ctx.shadowBlur = 0;
+            }
+            ctx.restore();
+        }
+
+        // Рисование таймлайна (исправлено)
+        function drawTimeline(currentFallingNotesArr) {
+            const ky = height - KEYBOARD_HEIGHT;
+            const now = performance.now();
+            const keyWidth = width / TOTAL_KEYS;
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+
+            for (let i = currentFallingNotesArr.length - 1; i >= 0; i--) {
+                const fn = currentFallingNotesArr[i];
+                const baseRect = getKeyBaseRect(fn.note);
+                if (!baseRect) continue;
+
+                // У всех падающих нот ТЕПЕРЬ *одинаковая* ширина основания
+                const noteX = baseRect.x + 0.5;
+                const noteW = keyWidth - 1;
+
+                const fallTimeStart = now - fn.startTime;
+                let yStart = ky - fallTimeStart * (SCROLL_SPEED / 1000); 
+
+                let yEnd;
+                if (fn.active) { yEnd = ky; } else {
+                    const fallTimeEnd = now - fn.endTime;
+                    yEnd = ky - fallTimeEnd * (SCROLL_SPEED / 1000);
+                }
+
+                if (yStart < ky && yEnd > 0) {
+                    const rectY = Math.max(0, yStart);
+                    const rectHeight = yEnd - rectY; 
+                    const color = getNoteColor(fn.note, fn.velocity);
+
+                    const gradient = ctx.createLinearGradient(0, rectY, 0, rectY + rectHeight);
+                    gradient.addColorStop(0, color);
+                    gradient.addColorStop(1, '#ffffff'); 
+
+                    ctx.fillStyle = gradient;
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = color;
+                    
+                    ctx.fillRect(noteX, rectY, noteW, rectHeight);
+                    ctx.shadowBlur = 0;
+                }
+
+                if (yEnd < 0) { currentFallingNotesArr.splice(i, 1); }
+            }
+            ctx.restore();
+        }
+
+        function updateAndDraw() {
+            // Очистка
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.4)'; // Сильный шлейф для эффекта
+            ctx.fillRect(0, 0, width, height);
+
+            // Таймлайн
+            drawTimeline(fallingNotesArr);
+
+            // Клавиатура (всегда поверх)
+            drawPianoKeyboard(activeNotesMap);
+
+            requestAnimationFrame(updateAndDraw);
+        }
+
+        updateAndDraw();
+    </script>
+</body>
+</html>

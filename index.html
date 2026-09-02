@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>MIDI Piano Visualizer</title>
+    <link rel="stylesheet" href="./src/ui/hud.css">
+</head>
+<body>
+    <canvas id="stage"></canvas>
+    <div id="hud" class="hud">
+        <div class="hud__title">MIDI Piano Visualizer</div>
+        <div class="hud__status" data-role="status">Поиск MIDI-устройства…</div>
+        <div class="hud__hint" data-role="hints"></div>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

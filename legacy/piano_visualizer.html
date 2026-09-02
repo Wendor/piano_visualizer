@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MIDI Piano Visualizer</title>
+<style>
+    :root {
+        --hud: rgba(255, 255, 255, 0.62);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #04050a;
+        color: #fff;
+        font-family: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+        -webkit-tap-highlight-color: transparent;
+    }
+    canvas { display: block; touch-action: none; }
+
+    #hud {
+        position: fixed;
+        top: 22px;
+        left: 24px;
+        z-index: 10;
+        pointer-events: none;
+        font-size: 11px;
+        line-height: 1.85;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--hud);
+        text-shadow: 0 1px 12px rgba(0, 0, 0, 0.9);
+        transition: opacity 0.7s ease;
+    }
+    #hud.dim { opacity: 0; }
+    #hud b {
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        color: rgba(255, 255, 255, 0.92);
+    }
+    #hud .row { display: flex; gap: 10px; align-items: baseline; }
+    #hud .k {
+        display: inline-block;
+        min-width: 15px;
+        padding: 1px 5px;
+        margin-right: 2px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 4px;
+        font-size: 10px;
+        text-align: center;
+        color: rgba(255, 255, 255, 0.8);
+    }
+    #hud .muted { color: rgba(255, 255, 255, 0.38); }
+    #status::before {
+        content: "";
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        margin-right: 8px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 10px currentColor;
+        vertical-align: middle;
+    }
+    #status.on { color: #46e5a0; }
+    #status.off { color: rgba(255, 255, 255, 0.30); }
+</style>
+</head>
+<body>
+<div id="hud">
+    <div class="row"><b>MIDI Piano Visualizer</b></div>
+    <div id="status" class="off">Поиск MIDI-устройства…</div>
+    <div class="muted">
+        <span class="k">Z</span><span class="k">X</span><span class="k">C</span><span class="k">V</span> и <span class="k">Q</span><span class="k">W</span><span class="k">E</span><span class="k">R</span> — играть с клавиатуры ПК
+    </div>
+    <div class="muted"><span class="k">␣</span> — педаль &nbsp;·&nbsp; <span class="k">[</span><span class="k">]</span> — палитра &nbsp;·&nbsp; <span class="k">↑</span><span class="k">↓</span> — свечение &nbsp;·&nbsp; <span class="k">Esc</span> — скрыть</div>
+</div>
+<canvas id="canvas"></canvas>
+
+<script>
+"use strict";
+
+/* ==========================================================================
+   Настройки
+   ========================================================================== */
+const CONFIG = {
+    firstMidi: 21,        // A0 — первая клавиша 88-клавишного рояля
+    lastMidi: 108,        // C8 — последняя
+    scrollSpeed: 240,     // скорость подъёма нот, px/сек
+    bloom: 1.0,           // сила свечения (0 — выключено, 2 — максимум)
+    keyboardRatio: 4.9,   // высота клавиатуры = ширина белой клавиши × это число
+    keyboardMax: 0.30,    // но не выше 30% экрана
+    blackWidth: 0.583,    // ширина чёрной клавиши в долях белой (как на рояле)
+    blackHeight: 0.63,    // длина чёрной клавиши в долях белой
+    particles: true,      // искры в момент удара
+    autoDemo: true,       // автодемо, пока нет ни одной сыгранной ноты
+    autoRange: true,      // на узком экране показывать меньше октав, а не «спички»
+    minWhiteWidth: 13     // минимальная приемлемая ширина белой клавиши, px
+};
+
+// Диапазоны на выбор для узких экранов: 88 → 76 → 61 → 49 клавиш.
+const RANGE_STEPS = [[21, 108], [28, 103], [36, 96], [40, 88]];
+
+/* Палитры. Цвет ноты плавно смещается по высоте инструмента — бас и дискант
+   различимы, но всё остаётся одним семейством оттенков. */
+const THEMES = [
+    { id: "ion",     title: "Ion",     hueLow: 262, hueHigh: 188, sat: 92 },
+    { id: "ember",   title: "Ember",   hueLow: 376, hueHigh: 342, sat: 94 },
+    { id: "emerald", title: "Emerald", hueLow: 168, hueHigh: 132, sat: 88 }
+];
+let theme = THEMES[0];
+
+/* ==========================================================================
+   Холсты
+   ========================================================================== */
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const hud = document.getElementById("hud");
+const statusEl = document.getElementById("status");
+
+// Слой свечения: рисуется в низком разрешении и растягивается с размытием.
+const bloomCanvas = document.createElement("canvas");
+const bctx = bloomCanvas.getContext("2d");
+const BLOOM_SCALE = 0.25;
+
+// Статичная клавиатура: перерисовывается только при resize.
+// Два слоя: белые клавиши и чёрные клавиши (чёрные всегда идут поверх подсветки белых).
+const kbCanvas = document.createElement("canvas");
+const kctx = kbCanvas.getContext("2d");
+const kbTopCanvas = document.createElement("canvas");
+const tctx = kbTopCanvas.getContext("2d");
+
+const supportsFilter = (function () {
+    const c = document.createElement("canvas").getContext("2d");
+    c.filter = "blur(2px)";
+    return c.filter === "blur(2px)";
+})();
+
+let W = 0, H = 0, DPR = 1;
+let kbTop = 0, kbHeight = 0, whiteW = 0, blackW = 0, blackH = 0;
+
+/* ==========================================================================
+   Геометрия клавиатуры
+   ========================================================================== */
+const WHITE_PC = [0, 2, 4, 5, 7, 9, 11];           // до, ре, ми, фа, соль, ля, си
+const isBlackPc = pc => !WHITE_PC.includes(pc);
+
+// Количество белых клавиш строго ниже данной ноты (абсолютная шкала MIDI).
+function whitesBelow(midi) {
+    const oct = Math.floor(midi / 12);
+    const pc = midi - oct * 12;
+    let n = 0;
+    for (const w of WHITE_PC) if (w < pc) n++;
+    return oct * 7 + n;
+}
+
+/* Центры чёрных клавиш внутри октавы, в ширинах белой клавиши.
+   Модель настоящего рояля: задние части белых клавиш внутри группы
+   (до-ре-ми и фа-соль-ля-си) равны между собой, поэтому чёрные клавиши
+   смещены относительно стыков — крайние наружу, средняя ровно по стыку. */
+function blackOffsets(bw) {
+    const g1 = (3 - 2 * bw) / 3;      // задняя ширина до / ре / ми
+    const g2 = (4 - 3 * bw) / 4;      // задняя ширина фа / соль / ля / си
+    const o = {};
+    o[1]  = g1 + bw / 2;                    // до-диез
+    o[3]  = 2 * g1 + 1.5 * bw;              // ре-диез
+    o[6]  = 3 + g2 + bw / 2;                // фа-диез
+    o[8]  = 3 + 2 * g2 + 1.5 * bw;          // соль-диез
+    o[10] = 3 + 3 * g2 + 2.5 * bw;          // ля-диез
+    return o;
+}
+
+const keys = [];        // все клавиши слева направо
+const keyByMidi = new Map();
+const range = { first: CONFIG.firstMidi, last: CONFIG.lastMidi };  // что реально видно
+
+// Округление до целого физического пикселя — иначе клавиши визуально «пляшут».
+const snap = v => Math.round(v * DPR) / DPR;
+
+function buildLayout() {
+    keys.length = 0;
+    keyByMidi.clear();
+
+    let first = CONFIG.firstMidi, last = CONFIG.lastMidi;
+    if (CONFIG.autoRange) {
+        for (const [a, b] of RANGE_STEPS) {
+            if (a < CONFIG.firstMidi || b > CONFIG.lastMidi) continue;
+            first = a; last = b;
+            const count = whitesBelow(b + 1) - whitesBelow(a);
+            if (W / count >= CONFIG.minWhiteWidth) break;
+        }
+    }
+    range.first = first;
+    range.last = last;
+    const whiteCount = whitesBelow(last + 1) - whitesBelow(first);
+
+    // Ширина белой клавиши — целое число физических пикселей, одинаковое для всех.
+    whiteW = Math.floor((W * DPR) / whiteCount) / DPR;
+    const marginX = snap((W - whiteW * whiteCount) / 2);
+
+    kbHeight = Math.round(Math.min(whiteW * CONFIG.keyboardRatio, H * CONFIG.keyboardMax));
+    kbHeight = Math.max(kbHeight, 70);
+    kbTop = Math.round(H - kbHeight);
+
+    blackW = snap(whiteW * CONFIG.blackWidth);
+    blackH = Math.round(kbHeight * CONFIG.blackHeight);
+
+    const offsets = blackOffsets(blackW / whiteW);
+    const whiteBase = whitesBelow(first);
+
+    for (let midi = first; midi <= last; midi++) {
+        const pc = ((midi % 12) + 12) % 12;
+        const black = isBlackPc(pc);
+        let x, w;
+
+        if (black) {
+            const cOfOctave = Math.floor(midi / 12) * 12;
+            const unit = whitesBelow(cOfOctave) - whiteBase + offsets[pc];
+            x = snap(marginX + unit * whiteW - blackW / 2);
+            w = blackW;
+        } else {
+            const idx = whitesBelow(midi) - whiteBase;
+            x = snap(marginX + idx * whiteW);
+            w = whiteW;
+        }
+
+        const key = { midi, pc, black, x, w, h: black ? blackH : kbHeight, flash: 0, press: 0 };
+        keys.push(key);
+        keyByMidi.set(midi, key);
+    }
+}
+
+/* ==========================================================================
+   Цвет
+   ========================================================================== */
+function hueFor(midi) {
+    const t = (midi - range.first) / Math.max(1, range.last - range.first);
+    return theme.hueLow + (theme.hueHigh - theme.hueLow) * Math.min(1, Math.max(0, t));
+}
+const hsl = (h, l, a = 1, s = theme.sat) => `hsla(${h.toFixed(1)}, ${s}%, ${l}%, ${a})`;
+
+/* ==========================================================================
+   Состояние
+   ========================================================================== */
+const active = new Map();       // midi -> { velocity, sustained }
+const notes = [];               // растущие полосы
+const sparks = [];
+let sustain = false;
+let played = 0;                 // сколько нот сыграно живьём
+
+function noteOn(midi, velocity) {
+    const key = keyByMidi.get(midi) || keyByMidi.get(foldIntoRange(midi));
+    if (!key) return;
+    midi = key.midi;
+    if (active.has(midi)) noteOff(midi, true);
+
+    active.set(midi, { velocity, sustained: false });
+    key.flash = 1;
+    key.press = 1;
+
+    const gap = Math.max(1, key.w * 0.10);
+    notes.push({
+        midi,
+        x: key.x + gap,
+        w: Math.max(2, key.w - gap * 2),
+        top: kbTop,
+        bottom: kbTop,
+        hue: hueFor(midi),
+        vel: Math.min(1, velocity / 110),
+        black: key.black,
+        live: true
+    });
+
+    if (CONFIG.particles) spawnSparks(key, velocity);
+}
+
+function noteOff(midi, force) {
+    if (!active.has(midi)) {
+        const folded = foldIntoRange(midi);
+        if (active.has(folded)) midi = folded;
+    }
+    const state = active.get(midi);
+    if (!state) return;
+    if (sustain && !force) { state.sustained = true; return; }
+
+    active.delete(midi);
+    for (let i = notes.length - 1; i >= 0; i--) {
+        if (notes[i].midi === midi && notes[i].live) { notes[i].live = false; break; }
+    }
+}
+
+// Перенос ноты октавами внутрь показанного диапазона.
+function foldIntoRange(midi) {
+    while (midi < range.first) midi += 12;
+    while (midi > range.last) midi -= 12;
+    return midi;
+}
+
+function releaseSustained() {
+    for (const [midi, state] of [...active]) if (state.sustained) noteOff(midi, true);
+}
+
+function spawnSparks(key, velocity) {
+    const n = Math.round(7 + (velocity / 127) * 13);
+    const hue = hueFor(key.midi);
+    const cx = key.x + key.w / 2;
+    for (let i = 0; i < n; i++) {
+        const spread = key.w * 1.5;
+        const aim = (Math.random() - 0.5);
+        sparks.push({
+            x: cx + aim * spread,
+            y: kbTop - Math.random() * 6,
+            vx: aim * 190 + (Math.random() - 0.5) * 90,
+            vy: -(150 + Math.random() * 430) * (0.5 + velocity / 200),
+            size: 0.5 + Math.random() * 0.8,
+            life: 0,
+            max: 0.45 + Math.random() * 0.75,
+            hue
+        });
+    }
+}
+
+/* ==========================================================================
+   Ввод: MIDI, клавиатура ПК, мышь
+   ========================================================================== */
+function setStatus(text, on) {
+    statusEl.textContent = text;
+    statusEl.className = on ? "on" : "off";
+}
+
+if (navigator.requestMIDIAccess) {
+    navigator.requestMIDIAccess().then(onMIDISuccess, () => setStatus("Нет доступа к MIDI", false));
+} else {
+    setStatus("Web MIDI не поддерживается", false);
+}
+
+function onMIDISuccess(midiAccess) {
+    const bind = () => {
+        const names = [];
+        midiAccess.inputs.forEach(input => {
+            input.onmidimessage = onMIDIMessage;
+            names.push(input.name);
+        });
+        if (names.length) setStatus(names.join(" · "), true);
+        else setStatus("Подключите MIDI-клавиатуру", false);
+    };
+    midiAccess.onstatechange = bind;
+    bind();
+}
+
+function onMIDIMessage(message) {
+    const [status, data1, data2 = 0] = message.data;
+    const command = status & 0xf0;
+    if (command === 0x90 && data2 > 0) { markPlayed(); noteOn(data1, data2); }
+    else if (command === 0x80 || (command === 0x90 && data2 === 0)) noteOff(data1);
+    else if (command === 0xb0 && data1 === 64) {
+        sustain = data2 >= 64;
+        if (!sustain) releaseSustained();
+    } else if (command === 0xb0 && (data1 === 120 || data1 === 123)) {
+        for (const midi of [...active.keys()]) noteOff(midi, true);
+    }
+}
+
+// Раскладка ПК: два ряда, как в трекерах. Нижний ряд — от до первой октавы.
+const PC_KEYS = {
+    // нижний ряд — от до малой октавы, верхний — октавой выше
+    KeyZ: 48, KeyS: 49, KeyX: 50, KeyD: 51, KeyC: 52, KeyV: 53, KeyG: 54,
+    KeyB: 55, KeyH: 56, KeyN: 57, KeyJ: 58, KeyM: 59, Comma: 60, KeyL: 61, Period: 62,
+    KeyQ: 60, Digit2: 61, KeyW: 62, Digit3: 63, KeyE: 64, KeyR: 65, Digit5: 66,
+    KeyT: 67, Digit6: 68, KeyY: 69, Digit7: 70, KeyU: 71, KeyI: 72, Digit9: 73, KeyO: 74
+};
+
+window.addEventListener("keydown", e => {
+    if (e.repeat || e.metaKey || e.ctrlKey) return;
+
+    if (e.code === "BracketRight" || e.code === "BracketLeft") {
+        const step = e.code === "BracketRight" ? 1 : THEMES.length - 1;
+        setTheme((THEMES.indexOf(theme) + step) % THEMES.length);
+        e.preventDefault();
+        return;
+    }
+    if (e.code === "ArrowUp" || e.code === "ArrowDown") {
+        CONFIG.bloom = Math.max(0, Math.min(2, CONFIG.bloom + (e.code === "ArrowUp" ? 0.1 : -0.1)));
+        flashHud("Свечение " + Math.round(CONFIG.bloom * 100) + "%");
+        e.preventDefault();
+        return;
+    }
+    if (e.code === "Escape") { hud.classList.toggle("dim"); hudPinned = hud.classList.contains("dim"); return; }
+    if (e.code === "Space") { sustain = true; e.preventDefault(); return; }
+
+    const midi = PC_KEYS[e.code];
+    if (midi !== undefined) { markPlayed(); noteOn(midi, 96); }
+});
+
+window.addEventListener("keyup", e => {
+    if (e.code === "Space") { sustain = false; releaseSustained(); return; }
+    const midi = PC_KEYS[e.code];
+    if (midi !== undefined) noteOff(midi);
+});
+
+// Мышь и тач по нарисованной клавиатуре.
+let pointerNote = null;
+function keyAt(x, y) {
+    if (y < kbTop) return null;
+    for (const key of keys) {
+        if (!key.black) continue;
+        if (x >= key.x && x <= key.x + key.w && y <= kbTop + key.h) return key;
+    }
+    for (const key of keys) {
+        if (key.black) continue;
+        if (x >= key.x && x <= key.x + key.w) return key;
+    }
+    return null;
+}
+canvas.addEventListener("pointerdown", e => {
+    const key = keyAt(e.clientX, e.clientY);
+    if (!key) return;
+    canvas.setPointerCapture(e.pointerId);
+    pointerNote = key.midi;
+    markPlayed();
+    noteOn(key.midi, 100);
+});
+canvas.addEventListener("pointermove", e => {
+    if (pointerNote === null) return;
+    const key = keyAt(e.clientX, e.clientY);
+    if (key && key.midi !== pointerNote) {
+        noteOff(pointerNote);
+        pointerNote = key.midi;
+        noteOn(key.midi, 100);
+    }
+});
+const endPointer = () => { if (pointerNote !== null) { noteOff(pointerNote); pointerNote = null; } };
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
+
+function setTheme(index) {
+    theme = THEMES[index] || THEMES[0];
+    for (const note of notes) note.hue = hueFor(note.midi);
+    drawKeyboardCache();
+    flashHud("Палитра · " + theme.title);
+}
+
+/* ==========================================================================
+   HUD
+   ========================================================================== */
+let hudTimer = 0, hudPinned = false;
+function flashHud(text) {
+    if (text) {
+        statusEl.dataset.keep = statusEl.dataset.keep || statusEl.textContent;
+        statusEl.textContent = text;
+        clearTimeout(+statusEl.dataset.t || 0);
+        statusEl.dataset.t = setTimeout(() => {
+            statusEl.textContent = statusEl.dataset.keep || "";
+            delete statusEl.dataset.keep;
+        }, 1400);
+    }
+    if (hudPinned) return;
+    hud.classList.remove("dim");
+    clearTimeout(hudTimer);
+    hudTimer = setTimeout(() => hud.classList.add("dim"), 6000);
+}
+window.addEventListener("pointermove", () => flashHud());
+flashHud();
+
+function markPlayed() { played++; }
+
+/* ==========================================================================
+   Отрисовка клавиатуры (кэш)
+   ========================================================================== */
+function roundRect(c, x, y, w, h, r) {
+    if (c.roundRect) { c.beginPath(); c.roundRect(x, y, w, h, r); return; }
+    const rr = Array.isArray(r) ? r : [r, r, r, r];
+    c.beginPath();
+    c.moveTo(x + rr[0], y);
+    c.lineTo(x + w - rr[1], y);
+    c.quadraticCurveTo(x + w, y, x + w, y + rr[1]);
+    c.lineTo(x + w, y + h - rr[2]);
+    c.quadraticCurveTo(x + w, y + h, x + w - rr[2], y + h);
+    c.lineTo(x + rr[3], y + h);
+    c.quadraticCurveTo(x, y + h, x, y + h - rr[3]);
+    c.lineTo(x, y + rr[0]);
+    c.quadraticCurveTo(x, y, x + rr[0], y);
+}
+
+// Контур клавиши: скруглены только передние (нижние) углы, как у настоящей.
+function keyPath(c, key, dy) {
+    const r = key.black ? Math.min(3, key.w * 0.16) : Math.min(4, key.w * 0.13);
+    roundRect(c, key.x, dy, key.w, key.h, [0, 0, r, r]);
+}
+
+function drawKeyboardCache() {
+    for (const [c, cc] of [[kbCanvas, kctx], [kbTopCanvas, tctx]]) {
+        c.width = Math.max(1, Math.round(W * DPR));
+        c.height = Math.max(1, Math.round(kbHeight * DPR));
+        cc.setTransform(DPR, 0, 0, DPR, 0, 0);
+        cc.clearRect(0, 0, W, kbHeight);
+    }
+
+    const localKey = key => ({ x: key.x, w: key.w, h: key.h, black: key.black });
+
+    // --- Белые клавиши ---
+    for (const key of keys) {
+        if (key.black) continue;
+        const k = localKey(key);
+
+        const g = kctx.createLinearGradient(0, 0, 0, kbHeight);
+        g.addColorStop(0.00, "#c9ced7");
+        g.addColorStop(0.05, "#eef1f4");
+        g.addColorStop(0.45, "#fdfdfe");
+        g.addColorStop(0.93, "#ffffff");
+        g.addColorStop(1.00, "#cdd3db");
+
+        kctx.save();
+        keyPath(kctx, { ...k, x: k.x }, 0);
+        kctx.clip();
+        kctx.fillStyle = g;
+        kctx.fillRect(k.x, 0, k.w, kbHeight);
+
+        // Тень от корпуса в глубине клавиатуры.
+        const shade = kctx.createLinearGradient(0, 0, 0, kbHeight * 0.26);
+        shade.addColorStop(0, "rgba(10,14,22,0.40)");
+        shade.addColorStop(1, "rgba(10,14,22,0)");
+        kctx.fillStyle = shade;
+        kctx.fillRect(k.x, 0, k.w, kbHeight * 0.26);
+
+        // Передний торец.
+        const lip = kctx.createLinearGradient(0, kbHeight - 7, 0, kbHeight);
+        lip.addColorStop(0, "rgba(255,255,255,0)");
+        lip.addColorStop(0.5, "rgba(140,150,165,0.30)");
+        lip.addColorStop(1, "rgba(90,100,115,0.55)");
+        kctx.fillStyle = lip;
+        kctx.fillRect(k.x, kbHeight - 7, k.w, 7);
+        kctx.restore();
+
+        // Разделитель между белыми клавишами.
+        kctx.fillStyle = "rgba(24,30,40,0.30)";
+        kctx.fillRect(k.x, 0, Math.max(0.5, 1 / DPR), kbHeight - 2);
+        kctx.fillStyle = "rgba(255,255,255,0.55)";
+        kctx.fillRect(k.x + Math.max(0.5, 1 / DPR), 0, Math.max(0.5, 1 / DPR), kbHeight - 4);
+    }
+
+    // --- Тени от чёрных клавиш ложатся на белые ---
+    for (const key of keys) {
+        if (!key.black) continue;
+        const sh = tctx.createLinearGradient(0, 0, 0, key.h + 12);
+        sh.addColorStop(0, "rgba(8,10,16,0.34)");
+        sh.addColorStop(1, "rgba(8,10,16,0)");
+        tctx.fillStyle = sh;
+        tctx.fillRect(key.x - 3, 0, key.w + 8, key.h + 12);
+    }
+
+    // --- Чёрные клавиши ---
+    for (const key of keys) {
+        if (!key.black) continue;
+
+        const g = tctx.createLinearGradient(key.x, 0, key.x + key.w, 0);
+        g.addColorStop(0.00, "#33383f");
+        g.addColorStop(0.12, "#1b1e24");
+        g.addColorStop(0.55, "#0c0e12");
+        g.addColorStop(0.88, "#15181d");
+        g.addColorStop(1.00, "#020305");
+
+        tctx.save();
+        keyPath(tctx, key, 0);
+        tctx.clip();
+        tctx.fillStyle = g;
+        tctx.fillRect(key.x, 0, key.w, key.h);
+
+        // Верхняя фаска и передний торец клавиши.
+        const top = tctx.createLinearGradient(0, 0, 0, key.h * 0.22);
+        top.addColorStop(0, "rgba(255,255,255,0.16)");
+        top.addColorStop(1, "rgba(255,255,255,0)");
+        tctx.fillStyle = top;
+        tctx.fillRect(key.x, 0, key.w, key.h * 0.22);
+
+        const face = tctx.createLinearGradient(0, key.h - key.h * 0.16, 0, key.h);
+        face.addColorStop(0, "rgba(0,0,0,0.55)");
+        face.addColorStop(0.55, "rgba(92,100,114,0.42)");
+        face.addColorStop(1, "rgba(28,32,40,0.9)");
+        tctx.fillStyle = face;
+        tctx.fillRect(key.x, key.h - key.h * 0.16, key.w, key.h * 0.16);
+        tctx.restore();
+    }
+
+    // --- Тонкая тёмная планка корпуса над клавишами ---
+    const cap = tctx.createLinearGradient(0, 0, 0, 5);
+    cap.addColorStop(0, "rgba(0,0,0,0.95)");
+    cap.addColorStop(1, "rgba(0,0,0,0.15)");
+    tctx.fillStyle = cap;
+    tctx.fillRect(0, 0, W, 5);
+}
+
+/* ==========================================================================
+   Подсветка нажатых клавиш — строго внутри контура клавиши
+   ========================================================================== */
+function drawPressedKeys(black) {
+    for (const key of keys) {
+        if (key.black !== black) continue;
+        const state = active.get(key.midi);
+        const lit = state ? 1 : key.press;
+        if (lit <= 0.01) continue;
+
+        const hue = hueFor(key.midi);
+        const vel = state ? Math.min(1, state.velocity / 110) : 0.7;
+        const a = lit * (0.55 + vel * 0.45);
+
+        ctx.save();
+        keyPath(ctx, key, kbTop);
+        ctx.clip();
+
+        const g = ctx.createLinearGradient(0, kbTop, 0, kbTop + key.h);
+        if (key.black) {
+            g.addColorStop(0.00, hsl(hue, 62, 0.98 * a));
+            g.addColorStop(0.55, hsl(hue, 44, 0.92 * a));
+            g.addColorStop(1.00, hsl(hue, 26, 0.85 * a));
+        } else {
+            g.addColorStop(0.00, hsl(hue, 66, 0.96 * a));
+            g.addColorStop(0.40, hsl(hue, 55, 0.88 * a));
+            g.addColorStop(1.00, hsl(hue, 44, 0.72 * a));
+        }
+        ctx.fillStyle = g;
+        ctx.fillRect(key.x, kbTop, key.w, key.h);
+
+        // Горячая кромка у самой линии удара — только в пределах своей клавиши.
+        const edge = ctx.createLinearGradient(0, kbTop, 0, kbTop + Math.min(26, key.h * 0.3));
+        edge.addColorStop(0, hsl(hue, 88, 0.75 * a, 100));
+        edge.addColorStop(1, hsl(hue, 60, 0, 100));
+        ctx.fillStyle = edge;
+        ctx.fillRect(key.x, kbTop, key.w, Math.min(26, key.h * 0.3));
+
+        // Передний торец остаётся тёмным — клавиша не превращается в плоский прямоугольник.
+        const foot = ctx.createLinearGradient(0, kbTop + key.h - 8, 0, kbTop + key.h);
+        foot.addColorStop(0, "rgba(0,0,0,0)");
+        foot.addColorStop(1, "rgba(0,0,0,0.45)");
+        ctx.fillStyle = foot;
+        ctx.fillRect(key.x, kbTop + key.h - 8, key.w, 8);
+
+        // Грани — чтобы соседние нажатые клавиши не сливались в одно пятно.
+        const edgeW = Math.max(1, 1 / DPR);
+        ctx.fillStyle = "rgba(6,8,16,0.42)";
+        ctx.fillRect(key.x, kbTop, edgeW, key.h);
+        ctx.fillStyle = hsl(hue, 82, 0.35 * a);
+        ctx.fillRect(key.x + key.w - edgeW, kbTop, edgeW, key.h);
+
+        ctx.restore();
+    }
+}
+
+/* ==========================================================================
+   Ноты
+   ========================================================================== */
+function drawNote(c, note, glowPass) {
+    const h = note.bottom - note.top;
+    if (h <= 0.5) return;
+
+    const r = Math.min(note.w * 0.38, 7, Math.max(1, h / 2));
+    const radii = note.live ? [r, r, 0, 0] : [r, r, r, r];
+
+    const alpha = 0.82 + note.vel * 0.18;
+
+    if (glowPass) {
+        c.globalAlpha = 0.5 + note.vel * 0.28;
+        c.fillStyle = hsl(note.hue, 54);
+        roundRect(c, note.x, note.top, note.w, h, radii);
+        c.fill();
+        c.globalAlpha = 1;
+        return;
+    }
+
+    const g = c.createLinearGradient(note.x, note.top, note.x + note.w, note.top);
+    g.addColorStop(0.00, hsl(note.hue, 44 + note.vel * 8, alpha));
+    g.addColorStop(0.35, hsl(note.hue, 60 + note.vel * 10, alpha));
+    g.addColorStop(1.00, hsl(note.hue, 38 + note.vel * 8, alpha));
+    c.fillStyle = g;
+    roundRect(c, note.x, note.top, note.w, h, radii);
+    c.fill();
+
+    // Блик вдоль левой грани — объём без выбеливания.
+    c.globalAlpha = alpha * 0.5;
+    c.fillStyle = hsl(note.hue, 82, 1);
+    roundRect(c, note.x + note.w * 0.16, note.top + 1.5, Math.max(1, note.w * 0.16), Math.max(0, h - 3),
+        Math.min(2, note.w * 0.08));
+    c.fill();
+
+    // Тонкий светлый кант.
+    c.globalAlpha = alpha * 0.8;
+    c.strokeStyle = hsl(note.hue, 72, 1);
+    c.lineWidth = 1 / DPR;
+    roundRect(c, note.x + 0.5 / DPR, note.top + 0.5 / DPR, note.w - 1 / DPR, h - 1 / DPR, radii);
+    c.stroke();
+    c.globalAlpha = 1;
+}
+
+/* ==========================================================================
+   Кадр
+   ========================================================================== */
+function update(dt) {
+    const dy = CONFIG.scrollSpeed * dt;
+
+    for (let i = notes.length - 1; i >= 0; i--) {
+        const note = notes[i];
+        note.top -= dy;
+        if (!note.live) note.bottom -= dy;
+        if (note.bottom < -40) notes.splice(i, 1);
+    }
+
+    for (let i = sparks.length - 1; i >= 0; i--) {
+        const s = sparks[i];
+        s.life += dt;
+        if (s.life >= s.max) { sparks.splice(i, 1); continue; }
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        s.vy += 430 * dt;
+        s.vx *= 1 - 1.9 * dt;
+        s.vy *= 1 - 0.5 * dt;
+    }
+
+    for (const key of keys) {
+        if (key.flash > 0) key.flash = Math.max(0, key.flash - dt * 4.5);
+        if (!active.has(key.midi) && key.press > 0) key.press = Math.max(0, key.press - dt * 6);
+    }
+}
+
+function drawBloomLayer() {
+    const bw = bloomCanvas.width, bh = bloomCanvas.height;
+    bctx.setTransform(1, 0, 0, 1, 0, 0);
+    bctx.clearRect(0, 0, bw, bh);
+    bctx.setTransform(bw / W, 0, 0, bh / H, 0, 0);
+
+    // Ноты.
+    for (const note of notes) drawNote(bctx, note, true);
+
+    // Свечение вдоль линии удара + вспышки под нажатыми клавишами.
+    for (const key of keys) {
+        const state = active.get(key.midi);
+        const intensity = Math.max(state ? 0.55 + Math.min(1, state.velocity / 110) * 0.45 : 0, key.flash);
+        if (intensity <= 0.02) continue;
+
+        const hue = hueFor(key.midi);
+        const spread = key.w * (2.0 + key.flash * 2.6);
+        const height = 34 + key.flash * 120;
+        const cx = key.x + key.w / 2;
+
+        const g = bctx.createRadialGradient(cx, kbTop, 0, cx, kbTop, Math.max(spread, height));
+        g.addColorStop(0, hsl(hue, 60, 0.7 * intensity));
+        g.addColorStop(0.42, hsl(hue, 52, 0.34 * intensity));
+        g.addColorStop(1, hsl(hue, 50, 0));
+        bctx.fillStyle = g;
+        bctx.fillRect(cx - spread, kbTop - height, spread * 2, height + 10);
+    }
+
+    // Искры.
+    for (const s of sparks) {
+        const k = 1 - s.life / s.max;
+        bctx.globalAlpha = k * 0.85;
+        bctx.strokeStyle = hsl(s.hue, 68, 1);
+        bctx.lineWidth = 1.6 + s.size * 1.6;
+        bctx.beginPath();
+        bctx.moveTo(s.x, s.y);
+        bctx.lineTo(s.x - s.vx * 0.014, s.y - s.vy * 0.014);
+        bctx.stroke();
+    }
+    bctx.globalAlpha = 1;
+}
+
+function compositeBloom() {
+    if (CONFIG.bloom <= 0.01) return;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const passes = supportsFilter
+        ? [{ blur: 4, a: 0.62 }, { blur: 14, a: 0.52 }, { blur: 40, a: 0.42 }]
+        : [{ blur: 0, a: 0.9 }];
+    for (const p of passes) {
+        if (supportsFilter) ctx.filter = `blur(${p.blur}px)`;
+        ctx.globalAlpha = Math.min(1, p.a * CONFIG.bloom);
+        ctx.drawImage(bloomCanvas, 0, 0, W, H);
+    }
+    ctx.restore();
+    ctx.filter = "none";
+    ctx.globalAlpha = 1;
+}
+
+function drawBackground() {
+    ctx.fillStyle = "#04050a";
+    ctx.fillRect(0, 0, W, H);
+
+    // Мягкое поднятие фона к линии клавиатуры — сцена не выглядит плоской.
+    const g = ctx.createLinearGradient(0, kbTop - H * 0.55, 0, kbTop);
+    g.addColorStop(0, "rgba(18,24,44,0)");
+    g.addColorStop(1, "rgba(20,28,52,0.55)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, kbTop - H * 0.55, W, H * 0.55);
+}
+
+// Ноты уходят в темноту у верхней кромки, а не обрезаются на полуслове.
+function drawTopFade() {
+    const h = Math.min(170, kbTop * 0.35);
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "rgba(4,5,10,1)");
+    g.addColorStop(0.55, "rgba(4,5,10,0.55)");
+    g.addColorStop(1, "rgba(4,5,10,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, h);
+}
+
+function drawStrikeLine() {
+    // Постоянная тонкая линия по краю клавиатуры.
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const midHue = (theme.hueLow + theme.hueHigh) / 2;
+    const base = ctx.createLinearGradient(0, kbTop - 7, 0, kbTop + 1);
+    base.addColorStop(0, hsl(midHue, 62, 0));
+    base.addColorStop(0.72, hsl(midHue, 58, 0.13));
+    base.addColorStop(1, hsl(midHue, 82, 0.34));
+    ctx.fillStyle = base;
+    ctx.fillRect(0, kbTop - 7, W, 8);
+    ctx.restore();
+}
+
+function drawKeyGlowSpill(black) {
+    // Свет ложится на верх нажатой клавиши, не выходя за её границы.
+    for (const key of keys) {
+        if (key.black !== black) continue;
+        const state = active.get(key.midi);
+        const lit = state ? 1 : key.press;
+        if (lit <= 0.02) continue;
+        const hue = hueFor(key.midi);
+        const h = Math.min(key.h, 22);
+
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        keyPath(ctx, key, kbTop);
+        ctx.clip();
+        const g = ctx.createLinearGradient(0, kbTop, 0, kbTop + h);
+        g.addColorStop(0, hsl(hue, 70, 0.5 * lit));
+        g.addColorStop(1, hsl(hue, 60, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(key.x, kbTop, key.w, h);
+        ctx.restore();
+    }
+}
+
+function render() {
+    drawBackground();
+    drawBloomLayer();
+
+    // Ядра нот — под свечением, чтобы блум обнимал их, а не заливал.
+    for (const note of notes) drawNote(ctx, note, false);
+
+    // Искры поверх нот.
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "round";
+    for (const s of sparks) {
+        const k = 1 - s.life / s.max;
+        ctx.globalAlpha = k * 0.9;
+        ctx.strokeStyle = hsl(s.hue, 74, 1);
+        ctx.lineWidth = s.size * (0.7 + k * 0.9);
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(s.x - s.vx * 0.012, s.y - s.vy * 0.012);
+        ctx.stroke();
+    }
+    ctx.restore();
+
+    compositeBloom();
+    drawTopFade();
+    drawStrikeLine();
+
+    // Клавиатура всегда поверх — свечение не размывает клавиши.
+    // Порядок слоёв: белые → их подсветка → чёрные → их подсветка.
+    ctx.drawImage(kbCanvas, 0, kbTop, W, kbHeight);
+    drawPressedKeys(false);
+    drawKeyGlowSpill(false);
+    ctx.drawImage(kbTopCanvas, 0, kbTop, W, kbHeight);
+    drawPressedKeys(true);
+    drawKeyGlowSpill(true);
+}
+
+let last = performance.now();
+function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (CONFIG.autoDemo && played === 0) demoStep(now);
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+}
+
+/* ==========================================================================
+   Автодемо — играет само, пока не пришла первая живая нота
+   ========================================================================== */
+const DEMO_CHORDS = [
+    [45, 52, 57, 60, 64],
+    [41, 48, 53, 57, 60],
+    [36, 43, 48, 52, 55],
+    [43, 50, 55, 59, 62]
+];
+const DEMO_PATTERN = [0, 2, 3, 4, 3, 2, 4, 3];
+let demoNext = 0, demoStepIdx = 0;
+
+function demoStep(now) {
+    if (now < demoNext) return;
+    if (demoNext === 0) { demoNext = now + 1200; return; }
+
+    const chord = DEMO_CHORDS[Math.floor(demoStepIdx / DEMO_PATTERN.length) % DEMO_CHORDS.length];
+    const pos = demoStepIdx % DEMO_PATTERN.length;
+    let midi = chord[DEMO_PATTERN[pos]];
+    if (pos === 0) midi = chord[0] - 12;
+    if (pos === 4 || pos === 7) midi += 12;
+
+    const vel = 62 + Math.round(Math.random() * 45);
+    noteOn(midi, vel);
+    setTimeout(() => noteOff(midi), 240 + Math.random() * 260);
+
+    if (pos === 3 && Math.random() < 0.7) {
+        const extra = chord[4] + 12;
+        setTimeout(() => { noteOn(extra, 70); setTimeout(() => noteOff(extra), 400); }, 90);
+    }
+
+    demoStepIdx++;
+    demoNext = now + 300;
+}
+
+/* ==========================================================================
+   Размеры
+   ========================================================================== */
+function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    bloomCanvas.width = Math.max(1, Math.round(W * BLOOM_SCALE));
+    bloomCanvas.height = Math.max(1, Math.round(H * BLOOM_SCALE));
+
+    buildLayout();
+    drawKeyboardCache();
+
+    // Пересчитать горизонтали у уже летящих нот; выпавшие из диапазона убрать.
+    for (let i = notes.length - 1; i >= 0; i--) {
+        const note = notes[i];
+        const key = keyByMidi.get(note.midi);
+        if (!key) { notes.splice(i, 1); continue; }
+        const gap = Math.max(1, key.w * 0.10);
+        note.x = key.x + gap;
+        note.w = Math.max(2, key.w - gap * 2);
+    }
+}
+
+window.addEventListener("resize", resize);
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
