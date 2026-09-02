@@ -4,7 +4,8 @@ const key = (label: string): string => `<span class="hud__key">${label}</span>`;
 
 const HINTS = [
     `${key("Z")}${key("X")}${key("C")}${key("V")} и ${key("Q")}${key("W")}${key("E")}${key("R")} — играть с клавиатуры ПК`,
-    `${key("␣")} — педаль &nbsp;·&nbsp; ${key("`")} — настройки`
+    `${key("␣")} — педаль &nbsp;·&nbsp; ${key("`")} — настройки`,
+    `перетащите .mid или <span class="hud__link" data-role="file">выберите файл</span>`
 ];
 
 /** Подсказка и статус MIDI. Прячется сама, возвращается по движению мыши. */
@@ -25,6 +26,11 @@ export class Hud {
         this.hints.innerHTML = HINTS.map((line) => `<div>${line}</div>`).join("");
         window.addEventListener("pointermove", () => this.wake());
         this.wake();
+    }
+
+    /** Ссылка «выберите файл» в подсказке. */
+    get fileLink(): HTMLElement | null {
+        return this.hints.querySelector<HTMLElement>('[data-role="file"]');
     }
 
     setMidiStatus(status: MidiStatus): void {

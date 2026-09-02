@@ -2,13 +2,14 @@ import { layerRegistry } from "../core/registry";
 import { BackgroundLayer } from "./BackgroundLayer";
 import { KeyboardLayer } from "./KeyboardLayer";
 import { RisingNotesLayer } from "./notes/RisingNotesLayer";
+import { FallingNotesLayer } from "./notes/FallingNotesLayer";
 import { BloomLayer } from "./effects/BloomLayer";
 import { KeyLightLayer } from "./effects/KeyLightLayer";
 import { SparksLayer } from "./effects/SparksLayer";
 import { StrikeLineLayer } from "./effects/StrikeLineLayer";
 import { TopFadeLayer } from "./effects/TopFadeLayer";
 
-export { BackgroundLayer, KeyboardLayer, RisingNotesLayer };
+export { BackgroundLayer, KeyboardLayer, RisingNotesLayer, FallingNotesLayer };
 export { BloomLayer, KeyLightLayer, SparksLayer, StrikeLineLayer, TopFadeLayer };
 
 let registered = false;
@@ -20,7 +21,8 @@ export function registerBuiltinLayers(): void {
 
     layerRegistry
         .register("background", (_c, o) => new BackgroundLayer(o as never))
-        .register("notes.rising", (_c, o) => new RisingNotesLayer(o as never))
+        .register("notes.rising", () => new RisingNotesLayer())
+        .register("notes.falling", () => new FallingNotesLayer())
         .register("effects.sparks", (_c, o) => new SparksLayer(o as never))
         .register("effects.keyLight", (_c, o) => new KeyLightLayer(o as never))
         .register("effects.bloom", (c, o) => new BloomLayer(c.visualizer.glow, o as never))
@@ -37,7 +39,8 @@ export interface StackEntry {
 /** Набор слоёв по умолчанию. Порядок не важен — сцена сортирует по ступени. */
 export const DEFAULT_STACK: readonly StackEntry[] = [
     { id: "background" },
-    { id: "notes.rising", options: { hollowNaturals: true } },
+    { id: "notes.rising" },
+    { id: "notes.falling" },
     { id: "effects.sparks" },
     { id: "effects.keyLight" },
     { id: "effects.bloom" },

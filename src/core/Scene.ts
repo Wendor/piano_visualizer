@@ -2,6 +2,7 @@ import { Emitter } from "./Emitter";
 import { KeyboardLayout, isAccidental, DEFAULT_LAYOUT_OPTIONS } from "./layout";
 import type { LayoutOptions } from "./layout";
 import { Theme } from "../theme/Theme";
+import { Playback } from "../score/Playback";
 import type { Viewport } from "./types";
 
 /** Сыгранная нота: чистое музыкальное событие, без геометрии. */
@@ -44,6 +45,8 @@ export class Scene {
     readonly theme = new Theme();
     readonly active = new Map<number, ActiveNote>();
     readonly notes: NoteEvent[] = [];
+    /** Воспроизведение партитуры: у файла, в отличие от живой игры, есть будущее. */
+    readonly playback = new Playback();
 
     viewport: Viewport = { width: 0, height: 0, dpr: 1 };
     /** Секунды от старта. */
@@ -141,9 +144,10 @@ export class Scene {
         this.events.emit("theme", { theme: this.theme });
     }
 
-    /** Сдвиг времени и уборка нот, вышедших за нужную слоям историю. */
+    /** Сдвиг времени, ноты из партитуры и уборка вышедшей истории. */
     advance(dt: number): void {
         this.time += dt;
+        this.playback.advance(dt, this);
         const cutoff = this.time - this.retention;
         let alive = 0;
         for (const note of this.notes) if (note.end === null || note.end > cutoff) alive++;

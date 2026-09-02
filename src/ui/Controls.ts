@@ -1,6 +1,7 @@
 import type { Visualizer } from "../core/Visualizer";
 import type { Hud } from "./Hud";
 import type { SettingsPanel } from "./SettingsPanel";
+import type { TransportBar } from "./TransportBar";
 
 /**
  * Единственная горячая клавиша в игровом режиме — открыть настройки.
@@ -14,7 +15,8 @@ export class Controls {
     constructor(
         private readonly visualizer: Visualizer,
         private readonly hud: Hud,
-        private readonly settings: SettingsPanel
+        private readonly settings: SettingsPanel,
+        private readonly transport: TransportBar | null = null
     ) {
         window.addEventListener("keydown", this.onKeyDown, { capture: true });
         window.addEventListener("keyup", this.onKeyUp, { capture: true });
@@ -41,7 +43,10 @@ export class Controls {
             return;
         }
 
-        if (!this.settings.open) return;
+        if (!this.settings.open) {
+            if (this.handleTransport(event)) this.consume(event);
+            return;
+        }
         this.consume(event);
         if (event.repeat && event.code !== "ArrowLeft" && event.code !== "ArrowRight") return;
 
@@ -74,6 +79,36 @@ export class Controls {
         if (event.code === this.toggleCode) return;
         this.consume(event);
     };
+
+    /**
+     * Транспорт слушает только клавиши, свободные от нот: ввод остаётся
+     * инструментом, пока файл не загружен.
+     */
+    private handleTransport(event: KeyboardEvent): boolean {
+        const { scene } = this.visualizer;
+        const playback = scene.playback;
+        if (!playback.loaded) return false;
+
+        const jump = event.shiftKey ? 30 : 5;
+        switch (event.code) {
+            case "Enter":
+                playback.transport.toggle();
+                break;
+            case "ArrowLeft":
+                playback.seek(playback.time - jump, scene);
+                break;
+            case "ArrowRight":
+                playback.seek(playback.time + jump, scene);
+                break;
+            case "Home":
+                playback.seek(0, scene);
+                break;
+            default:
+                return false;
+        }
+        this.transport?.wake();
+        return true;
+    }
 
     /** При открытии гасим всё, что успели зажать, — иначе нота повиснет. */
     private lock(): void {

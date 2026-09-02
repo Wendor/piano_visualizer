@@ -26,6 +26,7 @@ export class DemoPlayer implements InputSource {
     private index = 0;
     private stopped = false;
     private detachPerformance: (() => void) | null = null;
+    private detachScore: (() => void) | null = null;
     private frame = 0;
     private lastTime = 0;
     private readonly held = new Set<number>();
@@ -44,6 +45,8 @@ export class DemoPlayer implements InputSource {
         this.scene = scene;
         this.timer = -this.options.startDelay;
         this.detachPerformance = scene.events.on("performance", () => this.stop());
+        // Загруженный файл — тоже повод замолчать.
+        this.detachScore = scene.playback.events.on("score", () => this.stop());
         this.lastTime = performance.now();
         this.frame = requestAnimationFrame(this.tick);
     }
@@ -52,6 +55,8 @@ export class DemoPlayer implements InputSource {
         this.stop();
         this.detachPerformance?.();
         this.detachPerformance = null;
+        this.detachScore?.();
+        this.detachScore = null;
         this.scene = null;
     }
 
