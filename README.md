@@ -5,6 +5,8 @@
 
 ![сцена](docs/preview.jpg)
 
+Демо: <https://wendor.github.io/piano_visualizer/>
+
 ## Запуск
 
 ```bash
