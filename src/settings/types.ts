@@ -4,14 +4,15 @@
  */
 
 /** Группа `input` объявлена заранее и наполняется на этапе B. */
-export type ParamGroup = "view" | "notes" | "effects" | "input" | "system";
+export type ParamGroup = "view" | "notes" | "effects" | "sound" | "input" | "system";
 
-export const GROUP_ORDER: readonly ParamGroup[] = ["view", "notes", "effects", "input", "system"];
+export const GROUP_ORDER: readonly ParamGroup[] = ["view", "notes", "effects", "sound", "input", "system"];
 
 export const GROUP_TITLES: Readonly<Record<ParamGroup, string>> = {
     view: "Вид",
     notes: "Ноты",
     effects: "Эффекты",
+    sound: "Звук",
     input: "Ввод",
     system: "Система"
 };

@@ -5,7 +5,7 @@ import type { Score, ScoreNote } from "./types";
 
 /** Куда плеер отдаёт ноты. Сцена подходит как есть. */
 export interface NoteSink {
-    noteOn(midi: number, velocity: number, options?: { performance?: boolean }): void;
+    noteOn(midi: number, velocity: number, options?: { performance?: boolean; part?: number }): void;
     noteOff(midi: number, force?: boolean): void;
     setSustain(on: boolean): void;
     panic(): void;
@@ -110,7 +110,7 @@ export class Playback {
             this.nextNote++;
             if (this.muted.has(note.part)) continue;
             if (note.end <= span.to) continue; // нота целиком уместилась в кадр
-            sink.noteOn(note.midi, note.velocity);
+            sink.noteOn(note.midi, note.velocity, { part: note.part });
             this.sounding.push(note);
         }
 
@@ -147,7 +147,7 @@ export class Playback {
             const note = score.notes[i]!;
             if (note.start < from) break;
             if (note.end <= time || this.muted.has(note.part)) continue;
-            sink.noteOn(note.midi, note.velocity);
+            sink.noteOn(note.midi, note.velocity, { part: note.part });
             this.sounding.push(note);
         }
     }

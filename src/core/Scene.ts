@@ -5,6 +5,13 @@ import { Theme } from "../theme/Theme";
 import { Playback } from "../score/Playback";
 import type { Viewport } from "./types";
 
+/** Откуда нота: живая игра или партия файла — это нужно звуку, не картинке. */
+export interface NoteOptions {
+    performance?: boolean;
+    /** Индекс партии партитуры; -1 — живая игра. */
+    part?: number;
+}
+
 /** Сыгранная нота: чистое музыкальное событие, без геометрии. */
 export interface NoteEvent {
     readonly id: number;
@@ -26,7 +33,7 @@ export interface ActiveNote {
 }
 
 export interface SceneEvents extends Record<string, unknown> {
-    noteon: { midi: number; velocity: number; time: number };
+    noteon: { midi: number; velocity: number; time: number; part: number };
     noteoff: { midi: number; time: number };
     sustain: { on: boolean };
     layout: { layout: KeyboardLayout };
@@ -83,7 +90,7 @@ export class Scene {
         this.events.emit("layout", { layout: this.layout });
     }
 
-    noteOn(midi: number, velocity: number, options: { performance?: boolean } = {}): void {
+    noteOn(midi: number, velocity: number, options: NoteOptions = {}): void {
         const key = this.layout.get(midi) ?? this.layout.get(this.layout.fold(midi));
         if (!key) return;
         const target = key.midi;
@@ -106,7 +113,7 @@ export class Scene {
             this.performed++;
             this.events.emit("performance", { midi: target });
         }
-        this.events.emit("noteon", { midi: target, velocity, time: this.time });
+        this.events.emit("noteon", { midi: target, velocity, time: this.time, part: options.part ?? -1 });
     }
 
     noteOff(midi: number, force = false): void {

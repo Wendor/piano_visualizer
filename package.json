@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "sound:fetch": "node scripts/fetch-sound.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

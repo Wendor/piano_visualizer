@@ -1,3 +1,4 @@
+import { Sampler } from "./audio/Sampler";
 import { Visualizer } from "./core/Visualizer";
 import type { Layer } from "./core/types";
 import { DEFAULT_STACK, registerBuiltinLayers } from "./layers";
@@ -48,6 +49,9 @@ registerGlobalParams(settingsStore, visualizer, persistence);
 settingsStore.addOwner("notes.style", () => noteStyle.params());
 noteStyle.useQuality(visualizer.quality);
 
+const sampler = new Sampler();
+settingsStore.addOwner("sound", () => sampler.params());
+
 // Подписка до сборки стека: слои сами приносят свои параметры, в том числе те,
 // что добавлены уже после старта.
 visualizer.onLayerChange((layer, added) => {
@@ -64,6 +68,19 @@ persistence.load();
 persistence.start();
 
 const hud = new Hud(hudRoot);
+
+// Звук идёт от сцены, а не от источника ввода: так звучат и живая игра,
+// и файл, а педаль уже разобрана сценой — она держит ноту сама.
+sampler.onStatus = (text) => hud.flash(text, 1.6);
+scene.events.on("noteon", ({ midi, velocity, part }) => sampler.noteOn(midi, velocity, part));
+scene.events.on("noteoff", ({ midi }) => sampler.noteOff(midi));
+scene.playback.events.on("score", ({ score }) => sampler.useScore(score));
+
+// Браузер включает звук только после жеста — первый же и используем. Ловим
+// на перехвате и несколькими видами событий: до нас их может съесть слой ввода.
+for (const event of ["pointerdown", "mousedown", "touchstart", "keydown"] as const) {
+    window.addEventListener(event, () => sampler.unlock(), { once: true, capture: true });
+}
 const settings = new SettingsPanel(settingsStore);
 const transportBar = new TransportBar(scene.playback, scene);
 const controls = new Controls(visualizer, hud, settings, transportBar);
@@ -96,9 +113,11 @@ declare global {
     interface Window {
         visualizer: Visualizer;
         settings: SettingsStore;
+        sampler: Sampler;
     }
 }
 window.visualizer = visualizer;
 window.settings = settingsStore;
+window.sampler = sampler;
 
 void controls;
