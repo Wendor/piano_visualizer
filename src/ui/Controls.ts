@@ -4,14 +4,25 @@ import type { SettingsPanel } from "./SettingsPanel";
 import type { TransportBar } from "./TransportBar";
 
 /**
+ * Клавиша-переключатель настроек. Позиция зависит от клавиатуры: на ANSI знак
+ * `~` лежит слева от «1» (Backquote), на ISO там `§`, а сам `~` — рядом с левым
+ * Shift (IntlBackslash). Принимаем обе позиции, а символы служат подстраховкой
+ * для раскладок, где код клавиши до страницы не доходит.
+ */
+const TOGGLE_CODES = new Set(["Backquote", "IntlBackslash"]);
+const TOGGLE_KEYS = new Set(["`", "~", "ё", "Ё", "§", "±"]);
+
+/** Открывает ли клавиша настройки. Нотные раскладки эти клавиши не занимают. */
+export function isSettingsToggle(event: Pick<KeyboardEvent, "code" | "key">): boolean {
+    return TOGGLE_CODES.has(event.code) || TOGGLE_KEYS.has(event.key);
+}
+
+/**
  * Единственная горячая клавиша в игровом режиме — открыть настройки.
  * Пока панель открыта, события клавиатуры до источников нот не доходят,
  * поэтому настройки и ноты не пересекаются.
  */
 export class Controls {
-    /** Клавиша `~` / `ё`: не используется ни одной нотной раскладкой. */
-    private readonly toggleCode = "Backquote";
-
     constructor(
         private readonly visualizer: Visualizer,
         private readonly hud: Hud,
@@ -36,7 +47,7 @@ export class Controls {
     private readonly onKeyDown = (event: KeyboardEvent): void => {
         if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-        if (event.code === this.toggleCode) {
+        if (isSettingsToggle(event)) {
             this.consume(event);
             if (this.settings.toggle()) this.lock();
             else this.unlock();
@@ -76,7 +87,7 @@ export class Controls {
 
     private readonly onKeyUp = (event: KeyboardEvent): void => {
         if (!this.settings.open) return;
-        if (event.code === this.toggleCode) return;
+        if (isSettingsToggle(event)) return;
         this.consume(event);
     };
 
