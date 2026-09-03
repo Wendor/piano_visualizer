@@ -1,4 +1,6 @@
 import { clamp } from "../core/math";
+import { DRUM_CHANNEL } from "../score/gm";
+import type { Score } from "../score/types";
 
 /** Данные инструментов WebAudioFont: банк FluidR3 GM (лицензия MIT). */
 export const WAVETABLE_CDN = "https://surikov.github.io/webaudiofontdata/sound/";
@@ -39,4 +41,31 @@ export function sustains(program: number): boolean {
     if (program >= 40 && program <= 79) return true;
     if (program >= 84 && program <= 103) return true;
     return false;
+}
+
+/** Одна звуковая таблица, которую нужно поднять. */
+export interface BankNeed {
+    readonly file: string;
+    readonly program: number;
+    /** Чья это таблица: индекс партии или -1 — общая для живой игры. */
+    readonly part: number;
+}
+
+/**
+ * Какие таблицы поднять для выбранного тембра. В режиме «как в файле» это
+ * инструмент каждой партии плюс рояль: живая игра поверх файла не принадлежит
+ * ни одной партии, а ударные звучат иначе и сюда не попадают.
+ */
+export function banksNeeded(timbre: string, score: Score | null): BankNeed[] {
+    const chosen = TIMBRES.find((item) => item.id === timbre) ?? TIMBRES[0]!;
+    const base = chosen.program ?? 0;
+    const needed: BankNeed[] = [{ file: presetFile(base), program: base, part: -1 }];
+    if (chosen.program !== null || !score) return needed;
+
+    for (const part of score.parts) {
+        if (part.channel === DRUM_CHANNEL) continue;
+        const program = part.program ?? 0;
+        needed.push({ file: presetFile(program), program, part: part.index });
+    }
+    return needed;
 }

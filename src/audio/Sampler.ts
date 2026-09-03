@@ -1,9 +1,8 @@
 import { clamp } from "../core/math";
 import type { Score } from "../score/types";
-import { DRUM_CHANNEL } from "../score/gm";
 import type { ParamSpec } from "../settings/types";
 import { percent } from "../settings/types";
-import { presetFile, sustains, TIMBRES, WAVETABLE_CDN, WAVETABLE_LOCAL } from "./instruments";
+import { banksNeeded, sustains, TIMBRES, WAVETABLE_CDN, WAVETABLE_LOCAL } from "./instruments";
 import { decodeWavetable, parseWavetable, zoneFor } from "./wavetable";
 import type { Voiceable } from "./wavetable";
 
@@ -59,6 +58,8 @@ export class Sampler {
     private readonly parts = new Map<number, string>();
     private score: Score | null = null;
     private voices: Voice[] = [];
+    /** Номер последней затеянной загрузки: по нему отсеиваем устаревшие. */
+    private generation = 0;
 
     constructor(options: Partial<SamplerOptions> = {}) {
         this.options = { enabled: true, volume: 0.7, reverb: 0.25, timbre: "piano", ...options };
@@ -199,15 +200,14 @@ export class Sampler {
     // --- внутреннее ---------------------------------------------------------
 
     private bankFor(part: number): Bank | null {
-        if (this.options.timbre !== "score") return this.banks.get(this.timbreFile()) ?? null;
-        // Живая игра поверх файла не принадлежит ни одной партии — ей рояль.
-        const file = this.parts.get(part) ?? presetFile(0);
-        return this.banks.get(file) ?? null;
+        // Живая игра поверх файла не принадлежит ни одной партии — ей общий банк.
+        const own = this.options.timbre === "score" ? this.parts.get(part) : undefined;
+        return this.banks.get(own ?? this.baseFile) ?? null;
     }
 
-    private timbreFile(): string {
-        const timbre = TIMBRES.find((item) => item.id === this.options.timbre) ?? TIMBRES[0]!;
-        return presetFile(timbre.program ?? 0);
+    /** Банк, которым звучит всё, у чего нет своего: он же единственный у простых тембров. */
+    private get baseFile(): string {
+        return banksNeeded(this.options.timbre, null)[0]!.file;
     }
 
     /** Создать контекст (после жеста) и подтянуть нужные инструменты. */
@@ -215,24 +215,20 @@ export class Sampler {
         const ctx = this.ensure();
         if (!ctx) return;
 
-        if (this.options.timbre !== "score") {
-            const timbre = TIMBRES.find((item) => item.id === this.options.timbre) ?? TIMBRES[0]!;
-            await this.bank(presetFile(timbre.program ?? 0), timbre.program ?? 0);
-            return;
-        }
+        const generation = ++this.generation;
+        const needed = banksNeeded(this.options.timbre, this.score);
+        this.parts.clear();
+        for (const item of needed) if (item.part >= 0) this.parts.set(item.part, item.file);
 
-        // Рояль нужен в любом случае: им звучит живая игра поверх файла.
-        await this.bank(presetFile(0), 0);
-        const score = this.score;
-        if (!score) return;
-        for (const part of score.parts) {
-            // Ударные живут отдельным сэмплом на каждый звук — их пока не играем.
-            if (part.channel === DRUM_CHANNEL) continue;
-            const program = part.program ?? 0;
-            const file = presetFile(program);
-            this.parts.set(part.index, file);
-            await this.bank(file, program);
-        }
+        // Партии грузятся разом: очередь из «await» растягивала старт файла на
+        // несколько мегабайт друг за другом.
+        const missing = needed.filter((item) => !this.banks.has(item.file));
+        if (missing.length > 0) this.onStatus?.("загружаю звук…");
+        const banks = await Promise.all(needed.map((item) => this.bank(item.file, item.program)));
+
+        // Пока грузили, могли сменить тембр или открыть другой файл.
+        if (generation !== this.generation) return;
+        if (missing.length > 0 && banks.every((bank) => bank !== null)) this.onStatus?.("звук готов");
     }
 
     private async bank(file: string, program: number): Promise<Bank | null> {
@@ -251,7 +247,6 @@ export class Sampler {
     private async fetchBank(file: string, program: number): Promise<Bank | null> {
         const ctx = this.ctx;
         if (!ctx) return null;
-        this.onStatus?.("загружаю звук…");
 
         // Сначала местная копия, потом сеть: так проект играет и без интернета.
         for (const base of [WAVETABLE_LOCAL, WAVETABLE_CDN]) {
@@ -261,7 +256,6 @@ export class Sampler {
                 const zones = await decodeWavetable(ctx, parseWavetable(await response.text()));
                 const bank: Bank = { zones, sustaining: sustains(program) };
                 this.banks.set(file, bank);
-                this.onStatus?.("звук готов");
                 return bank;
             } catch {
                 continue;
@@ -319,9 +313,20 @@ export class Sampler {
     }
 
     private applyVolume(): void {
-        if (this.master) this.master.gain.value = clamp(this.options.volume, 0, 1);
-        if (this.wet) this.wet.gain.value = clamp(this.options.reverb, 0, 1) * 0.9;
+        if (this.master) this.ramp(this.master.gain, clamp(this.options.volume, 0, 1));
+        if (this.wet) this.ramp(this.wet.gain, clamp(this.options.reverb, 0, 1) * 0.9);
         void this.convolver;
+    }
+
+    /** Громкость меняется скатом, а не скачком: скачок слышен щелчком. */
+    private ramp(gain: AudioParam, value: number): void {
+        const ctx = this.ctx;
+        if (!ctx) {
+            gain.value = value;
+            return;
+        }
+        gain.cancelScheduledValues(ctx.currentTime);
+        gain.setTargetAtTime(value, ctx.currentTime, 0.02);
     }
 
     private release(midi: number, time: number): void {
