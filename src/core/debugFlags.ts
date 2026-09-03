@@ -6,6 +6,13 @@ export interface DebugFlags {
     profile?: boolean;
     /** Ступень качества вместо автоматической. */
     quality?: QualityMode;
+    /**
+     * Слои, которые не надо включать. Замер таймером видит только работу
+     * JavaScript, а холст платит за неё позже и на стороне ускорителя; на
+     * слабой машине единственный честный ответ «во что обходится слой» —
+     * выключить его и посмотреть на кадры.
+     */
+    off?: string[];
 }
 
 const MODES: readonly QualityMode[] = ["auto", "high", "medium", "low"];
@@ -28,6 +35,12 @@ export function parseDebugFlags(search: string): DebugFlags {
 
     const quality = query.get("quality");
     if (quality && MODES.includes(quality as QualityMode)) flags.quality = quality as QualityMode;
+
+    const off = (query.get("off") ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0);
+    if (off.length > 0) flags.off = off;
 
     return flags;
 }

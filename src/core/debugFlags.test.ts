@@ -33,4 +33,24 @@ describe("parseDebugFlags", () => {
     it("переживает мусор в строке запроса", () => {
         expect(parseDebugFlags("?=&&%")).toEqual({});
     });
+
+    it("выключает названный слой", () => {
+        expect(parseDebugFlags("?off=effects.bloom")).toEqual({ off: ["effects.bloom"] });
+    });
+
+    it("выключает несколько слоёв через запятую", () => {
+        expect(parseDebugFlags("?off=effects.bloom,effects.dust")).toEqual({
+            off: ["effects.bloom", "effects.dust"]
+        });
+    });
+
+    it("не спотыкается о пробелы и пустые куски: с пульта набирают как придётся", () => {
+        expect(parseDebugFlags("?off=effects.bloom, ,effects.dust,")).toEqual({
+            off: ["effects.bloom", "effects.dust"]
+        });
+    });
+
+    it("пустой список слоёв — это не список", () => {
+        expect(parseDebugFlags("?off=")).toEqual({});
+    });
 });

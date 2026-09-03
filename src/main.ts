@@ -76,6 +76,11 @@ if (debugFlags.profile !== undefined) fpsMeter.setProfiling(debugFlags.profile);
 
 const hud = new Hud(hudRoot);
 
+// Выключение слоёв из адреса — здесь, а не выше: об опечатке в имени надо
+// сказать, иначе человек решит, что слой ничего не стоит, а он просто работал.
+const unknownLayers = (debugFlags.off ?? []).filter((id) => !visualizer.toggleLayer(id, false));
+if (unknownLayers.length > 0) hud.flash(`Нет таких слоёв: ${unknownLayers.join(", ")}`, 4);
+
 // Ошибка внутри эффекта гасит только его, а не всю сцену.
 visualizer.onLayerFault((layer, error) => {
     const reason = error instanceof Error ? error.message : String(error);
