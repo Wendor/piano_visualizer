@@ -24,7 +24,16 @@ export default ts.config(
     },
     {
         files: ["scripts/**/*.mjs"],
-        languageOptions: { globals: { console: "readonly", process: "readonly", fetch: "readonly" } },
+        languageOptions: {
+            globals: {
+                console: "readonly",
+                process: "readonly",
+                fetch: "readonly",
+                setTimeout: "readonly",
+                clearTimeout: "readonly",
+                WebSocket: "readonly"
+            }
+        },
         rules: { "no-console": "off" }
     }
 );
