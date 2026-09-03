@@ -107,7 +107,9 @@ export class Scene {
             end: null
         });
 
-        this.energy = Math.min(1, this.energy + 0.1 + (velocity / 127) * 0.16);
+        // Каждая следующая нота добавляет меньше предыдущей: иначе на плотном
+        // месте энергия упирается в единицу и перестаёт что-либо означать.
+        this.energy += (1 - this.energy) * (0.1 + (velocity / 127) * 0.14);
 
         if (options.performance) {
             this.performed++;

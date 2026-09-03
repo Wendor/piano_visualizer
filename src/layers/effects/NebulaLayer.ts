@@ -24,6 +24,8 @@ interface Cloud {
     phase: number;
     /** Скорость дыхания облака. */
     pulse: number;
+    /** Своё место относительно центра внимания, в долях ширины экрана. */
+    offset: number;
 }
 
 /**
@@ -116,8 +118,11 @@ export class NebulaLayer extends BaseLayer {
             cloud.y += cloud.vy * drift * dt;
             cloud.phase += cloud.pulse * dt;
 
-            // Мягкое притяжение к центру внимания — туман собирается там, где играют.
-            cloud.x += (this.focus * this.width - cloud.x) * dt * 0.12;
+            // Притяжение к центру внимания — но каждое облако к своему месту
+            // рядом с ним: иначе при плотной игре все сойдутся в одну точку
+            // и сложатся в яркое пятно.
+            const home = (this.focus + cloud.offset) * this.width;
+            cloud.x += (home - cloud.x) * dt * 0.08;
 
             const margin = cloud.radius;
             if (cloud.x < -margin) cloud.x = this.width + margin;
@@ -132,7 +137,10 @@ export class NebulaLayer extends BaseLayer {
         if (density <= 0.01 || this.width <= 0) return;
 
         const { palette } = scene.theme;
-        const level = density * (0.05 + scene.energy * 0.22);
+        // Облака складываются по яркости, поэтому общий уровень делится между
+        // ними: гуще туман — не значит светлее.
+        const share = Math.sqrt(4 / Math.max(1, this.clouds.length));
+        const level = density * (0.05 + scene.energy * 0.13) * share;
 
         for (const cloud of this.clouds) {
             const breath = 0.55 + 0.45 * Math.sin(cloud.phase);
@@ -148,7 +156,7 @@ export class NebulaLayer extends BaseLayer {
             g.translate(cloud.x, cloud.y);
             g.fillStyle = this.gradients.get(`${palette.id}|${bucket(hue, 6)}|${radius}`, () => {
                 const gradient = g.createRadialGradient(0, 0, 0, 0, 0, radius);
-                gradient.addColorStop(0, scene.theme.color(hue, 52, 0.85));
+                gradient.addColorStop(0, scene.theme.color(hue, 50, 0.7));
                 gradient.addColorStop(0.45, scene.theme.color(hue, 46, 0.32));
                 gradient.addColorStop(1, scene.theme.color(hue, 40, 0));
                 return gradient;
@@ -177,7 +185,8 @@ export class NebulaLayer extends BaseLayer {
                 vx: Math.cos(angle),
                 vy: Math.sin(angle) * 0.5,
                 phase: Math.random() * Math.PI * 2,
-                pulse: 0.18 + Math.random() * 0.35
+                pulse: 0.18 + Math.random() * 0.35,
+                offset: (i / count - 0.5) * 0.8 + (Math.random() - 0.5) * 0.15
             });
         }
     }
