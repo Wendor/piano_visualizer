@@ -3,6 +3,7 @@ import { BackgroundLayer } from "./BackgroundLayer";
 import { KeyboardLayer } from "./KeyboardLayer";
 import { RisingNotesLayer } from "./notes/RisingNotesLayer";
 import { FallingNotesLayer } from "./notes/FallingNotesLayer";
+import { BarGridLayer } from "./notes/BarGridLayer";
 import { BloomLayer } from "./effects/BloomLayer";
 import { DustLayer } from "./effects/DustLayer";
 import { NebulaLayer } from "./effects/NebulaLayer";
@@ -11,7 +12,7 @@ import { SparksLayer } from "./effects/SparksLayer";
 import { StrikeLineLayer } from "./effects/StrikeLineLayer";
 import { TopFadeLayer } from "./effects/TopFadeLayer";
 
-export { BackgroundLayer, KeyboardLayer, RisingNotesLayer, FallingNotesLayer };
+export { BackgroundLayer, KeyboardLayer, RisingNotesLayer, FallingNotesLayer, BarGridLayer };
 export { BloomLayer, KeyLightLayer, SparksLayer, StrikeLineLayer, TopFadeLayer };
 export { DustLayer, NebulaLayer };
 
@@ -26,6 +27,7 @@ export function registerBuiltinLayers(): void {
         .register("background", (_c, o) => new BackgroundLayer(o as never))
         .register("notes.rising", () => new RisingNotesLayer())
         .register("notes.falling", () => new FallingNotesLayer())
+        .register("notes.grid", (_c, o) => new BarGridLayer(undefined, o as never))
         .register("effects.nebula", (c, o) => new NebulaLayer(c.visualizer.quality, o as never))
         .register("effects.dust", (c, o) => new DustLayer(c.visualizer.quality, o as never))
         .register("effects.sparks", (c, o) => new SparksLayer(c.visualizer.quality, o as never))
@@ -51,6 +53,7 @@ export const DEFAULT_STACK: readonly StackEntry[] = [
     { id: "effects.dust" },
     { id: "notes.rising" },
     { id: "notes.falling" },
+    { id: "notes.grid" },
     { id: "effects.sparks" },
     { id: "effects.keyLight" },
     { id: "effects.bloom" },

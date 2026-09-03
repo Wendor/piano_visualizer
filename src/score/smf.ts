@@ -5,18 +5,21 @@
 
 import { makeScore } from "./types";
 import type { PartDraft, PedalEvent, Score, ScoreNote } from "./types";
+import type { MeterPoint, TempoPoint } from "./grid";
 import { instrumentName } from "./gm";
 
 interface RawEvent {
     readonly tick: number;
     readonly track: number;
-    readonly kind: "on" | "off" | "pedal" | "tempo" | "program" | "name" | "instrument";
+    readonly kind: "on" | "off" | "pedal" | "tempo" | "meter" | "program" | "name" | "instrument";
     readonly midi: number;
     readonly velocity: number;
     readonly channel: number;
     /** Для tempo — микросекунды на четверть, для pedal и program — значение. */
     readonly value: number;
     readonly text?: string;
+    /** Только для meter: размер такта, знаменатель уже числом. */
+    readonly meter?: { numerator: number; denominator: number };
 }
 
 class Reader {
@@ -140,6 +143,21 @@ function readTrack(reader: Reader, end: number, track: number, out: RawEvent[]):
             if (meta === 0x51 && length === 3) {
                 const value = (reader.u8() << 16) | (reader.u8() << 8) | reader.u8();
                 out.push({ tick, track, kind: "tempo", midi: 0, velocity: 0, channel, value });
+            } else if (meta === 0x58 && length === 4) {
+                const numerator = reader.u8();
+                // Знаменатель лежит степенью двойки: 2 значит четверть, 3 — восьмую.
+                const denominator = 2 ** reader.u8();
+                reader.skip(2); // метроном и деление четверти — нам не нужны
+                out.push({
+                    tick,
+                    track,
+                    kind: "meter",
+                    midi: 0,
+                    velocity: 0,
+                    channel,
+                    value: 0,
+                    meter: { numerator, denominator }
+                });
             } else if (meta === 0x03 || meta === 0x04) {
                 const text = decodeText(reader.bytes(length));
                 if (text) {
@@ -274,6 +292,8 @@ function build(events: readonly RawEvent[], division: number, name: string, _tra
     let lastSeconds = 0;
     const seconds = (tick: number): number => lastSeconds + ((tick - lastTick) * tempo) / (division * 1e6);
     let pedalDown = false;
+    const tempos: TempoPoint[] = [];
+    const meters: MeterPoint[] = [];
 
     for (const event of events) {
         const time = seconds(event.tick);
@@ -282,6 +302,12 @@ function build(events: readonly RawEvent[], division: number, name: string, _tra
             lastSeconds = time;
             lastTick = event.tick;
             tempo = event.value;
+            tempos.push({ tick: event.tick, micros: event.value });
+            continue;
+        }
+
+        if (event.kind === "meter") {
+            if (event.meter) meters.push({ tick: event.tick, ...event.meter });
             continue;
         }
 
@@ -356,7 +382,7 @@ function build(events: readonly RawEvent[], division: number, name: string, _tra
         name: partName(part, trackNames, instrumentNames, channelsInTrack)
     }));
 
-    return makeScore(name, notes, pedal, named);
+    return makeScore(name, notes, pedal, named, { tempos, meters, division });
 }
 
 /** Имя дорожки, имя инструмента из файла, GM-инструмент, номер канала. */

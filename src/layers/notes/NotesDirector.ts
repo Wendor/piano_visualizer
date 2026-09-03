@@ -5,8 +5,9 @@ import type { ParamSpec } from "../../settings/types";
 export type NotesDirection = "auto" | "up" | "down";
 
 /**
- * Решает, какой из двух слоёв нот показывать. В режиме «авто» файл показывает
- * будущее (ноты падают), а живая игра — прошлое (ноты растут).
+ * Решает, какой из двух слоёв нот показывать, и вместе с ними — сетку тактов.
+ * В режиме «авто» файл показывает будущее (ноты падают), а живая игра —
+ * прошлое (ноты растут).
  */
 export class NotesDirector {
     private mode: NotesDirection = "auto";
@@ -44,5 +45,7 @@ export class NotesDirector {
         const falling = this.mode === "down" || (this.mode === "auto" && this.playback.loaded);
         this.visualizer.toggleLayer("notes.falling", falling);
         this.visualizer.toggleLayer("notes.rising", !falling);
+        // Сетка живёт вместе с падающими нотами: у живой игры темпа нет.
+        this.visualizer.toggleLayer("notes.grid", falling);
     }
 }

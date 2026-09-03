@@ -237,4 +237,35 @@ suite("parseMidiFile", () => {
             /нет нот/
         );
     });
+
+    it("читает размер такта и раскладывает сетку", () => {
+        const score = parseMidiFile(
+            file(0, DIVISION, [
+                track([
+                    [0, [0xff, 0x58, 0x04, 3, 2, 24, 8]], // три четверти
+                    [0, [0x90, 60, 100]],
+                    [DIVISION * 4, [0x80, 60, 0]]
+                ])
+            ]),
+            "waltz.mid"
+        );
+
+        // Такт в три четверти при 120 ударах — полтора секунды.
+        expect(score.grid.bars.map((t) => Math.round(t * 1000) / 1000)).toEqual([0, 1.5]);
+        expect(score.grid.beats.map((t) => Math.round(t * 1000) / 1000)).toEqual([0.5, 1, 2]);
+    });
+
+    it("без размера в файле сетка идёт по четыре четверти", () => {
+        const score = parseMidiFile(
+            file(0, DIVISION, [
+                track([
+                    [0, [0x90, 60, 100]],
+                    [DIVISION * 8, [0x80, 60, 0]]
+                ])
+            ]),
+            "plain.mid"
+        );
+
+        expect(score.grid.bars.map((t) => Math.round(t * 1000) / 1000)).toEqual([0, 2, 4]);
+    });
 });

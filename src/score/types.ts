@@ -1,5 +1,8 @@
 /** Партитура: ноты с заранее известным временем, в отличие от живой игры. */
 
+import { buildGrid, EMPTY_GRID } from "./grid";
+import type { GridSource, ScoreGrid } from "./grid";
+
 export interface ScoreNote {
     readonly midi: number;
     readonly velocity: number;
@@ -39,6 +42,8 @@ export interface Score {
     readonly duration: number;
     /** Самая длинная нота: насколько далеко назад смотреть при поиске окна. */
     readonly maxDuration: number;
+    /** Линии тактов и долей в секундах; пустая, если файл о размере молчал. */
+    readonly grid: ScoreGrid;
 }
 
 export type PartDraft = Omit<ScorePart, "notes">;
@@ -48,7 +53,9 @@ export function makeScore(
     name: string,
     notes: ScoreNote[],
     pedal: PedalEvent[],
-    parts: readonly PartDraft[]
+    parts: readonly PartDraft[],
+    /** Карты темпа и размера в тиках; сетка считается уже по длительности. */
+    source?: GridSource
 ): Score {
     const sorted = [...notes].sort((a, b) => a.start - b.start || a.midi - b.midi);
     const counts = new Array<number>(parts.length).fill(0);
@@ -68,7 +75,8 @@ export function makeScore(
         pedal: [...pedal].sort((a, b) => a.time - b.time),
         parts: parts.map((part, index) => ({ ...part, notes: counts[index] ?? 0 })),
         duration,
-        maxDuration
+        maxDuration,
+        grid: source ? buildGrid(source.tempos, source.meters, source.division, duration) : EMPTY_GRID
     };
 }
 
