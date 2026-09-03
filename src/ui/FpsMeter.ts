@@ -1,3 +1,4 @@
+import { LongTasks } from "../core/LongTasks";
 import type { Visualizer } from "../core/Visualizer";
 import type { ParamSpec } from "../settings/types";
 import { profileLines } from "./profile";
@@ -12,6 +13,7 @@ import { profileLines } from "./profile";
  */
 export class FpsMeter {
     private readonly root = document.createElement("div");
+    private readonly blocks = new LongTasks();
     private timer = 0;
     private shown = false;
 
@@ -68,6 +70,7 @@ export class FpsMeter {
 
     dispose(): void {
         window.clearInterval(this.timer);
+        this.blocks.dispose();
         this.root.remove();
     }
 
@@ -80,6 +83,13 @@ export class FpsMeter {
         // больше обычного, а картинка дёргается. Рывки об этом и говорят.
         if (smoothness.stalls > 0) {
             lines.push(`рывков ${smoothness.stalls} · худший ${smoothness.worst.toFixed(0)} мс`);
+        }
+
+        // Разовое замирание рывками не описать: через секунду ход снова ровный,
+        // а о причине судить не по чему. Блокировки показывают сам факт.
+        this.blocks.forget(performance.now());
+        if (this.blocks.count > 0) {
+            lines.push(`блокировок ${this.blocks.count} · до ${this.blocks.worst.toFixed(0)} мс`);
         }
 
         if (profiler.active) {
