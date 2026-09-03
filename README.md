@@ -14,6 +14,8 @@ npm install
 npm run dev        # http://127.0.0.1:5180
 npm run build      # проверка типов + сборка в dist/
 npm run typecheck
+npm run lint       # eslint + проверка форматирования
+npm run format     # prettier по месту
 npm test           # vitest
 ```
 

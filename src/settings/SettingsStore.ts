@@ -196,7 +196,8 @@ export class SettingsStore {
         if (typeof snapshot.values !== "object" || snapshot.values === null) return false;
 
         for (const [id, value] of Object.entries(snapshot.values)) {
-            if (typeof value !== "number" && typeof value !== "string" && typeof value !== "boolean") continue;
+            if (typeof value !== "number" && typeof value !== "string" && typeof value !== "boolean")
+                continue;
             this.set(id, value);
         }
         return true;

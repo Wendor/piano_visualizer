@@ -9,6 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
     "sound:fetch": "node scripts/fetch-sound.mjs"

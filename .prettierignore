@@ -1,0 +1,10 @@
+dist/
+node_modules/
+legacy/
+docs/
+package-lock.json
+
+# Разметку и README форматируем руками: prettier раздувает таблицы
+# на всю ширину и перекладывает примеры кода.
+*.md
+index.html

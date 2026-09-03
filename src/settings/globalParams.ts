@@ -46,7 +46,10 @@ export function registerGlobalParams(
                 key: "range",
                 label: "Диапазон",
                 group: "view",
-                variants: [{ value: "auto", title: "авто" }, ...ranges.map(({ value, title }) => ({ value, title }))],
+                variants: [
+                    { value: "auto", title: "авто" },
+                    ...ranges.map(({ value, title }) => ({ value, title }))
+                ],
                 get: () => {
                     const settings = scene.layout.settings;
                     if (settings.autoRange) return "auto";
@@ -58,7 +61,11 @@ export function registerGlobalParams(
                     } else {
                         const range = ranges.find((item) => item.value === value);
                         if (!range) return;
-                        scene.configureLayout({ autoRange: false, firstMidi: range.first, lastMidi: range.last });
+                        scene.configureLayout({
+                            autoRange: false,
+                            firstMidi: range.first,
+                            lastMidi: range.last
+                        });
                     }
                     apply();
                 }

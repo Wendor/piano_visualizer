@@ -83,10 +83,7 @@ export class KeyLightLayer extends BaseLayer {
         for (const key of layout.keys) {
             const state = scene.active.get(key.midi);
             const flash = this.flash.get(key.midi) ?? 0;
-            const intensity = Math.max(
-                state ? 0.55 + Math.min(1, state.velocity / 110) * 0.45 : 0,
-                flash
-            );
+            const intensity = Math.max(state ? 0.55 + Math.min(1, state.velocity / 110) * 0.45 : 0, flash);
             if (intensity <= 0.02) continue;
 
             const hue = theme.hueFor(key.midi, layout);

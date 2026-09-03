@@ -28,7 +28,8 @@ function optionRow(spec: RowSpec): HTMLButtonElement {
     if (spec.checked === false) row.classList.add("transport__option--off");
     if (spec.title) row.title = spec.title;
 
-    if (!spec.action) row.appendChild(Object.assign(document.createElement("span"), { className: "transport__mark" }));
+    if (!spec.action)
+        row.appendChild(Object.assign(document.createElement("span"), { className: "transport__mark" }));
     const name = document.createElement("span");
     name.className = "transport__option-name";
     name.textContent = spec.label;

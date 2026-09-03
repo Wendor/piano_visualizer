@@ -223,7 +223,7 @@ export class KeyboardLayer extends BaseLayer {
         for (const key of layout.keys) {
             if (key.accidental !== accidental) continue;
             const state = scene.active.get(key.midi);
-            const lit = state ? 1 : this.press.get(key.midi) ?? 0;
+            const lit = state ? 1 : (this.press.get(key.midi) ?? 0);
             if (lit <= 0.01) continue;
 
             const hue = theme.hueFor(key.midi, layout);
@@ -314,7 +314,7 @@ export class KeyboardLayer extends BaseLayer {
         for (const key of layout.keys) {
             if (key.accidental !== accidental) continue;
             const state = scene.active.get(key.midi);
-            const lit = state ? 1 : this.press.get(key.midi) ?? 0;
+            const lit = state ? 1 : (this.press.get(key.midi) ?? 0);
             if (lit <= 0.02) continue;
 
             const hue = theme.hueFor(key.midi, layout);
@@ -326,15 +326,12 @@ export class KeyboardLayer extends BaseLayer {
             this.keyPath(g, key, 0, 0);
             g.clip();
             g.globalAlpha = lit;
-            g.fillStyle = this.gradients.get(
-                `spill|${theme.palette.id}|${bucket(hue, 2)}|${height}`,
-                () => {
-                    const gradient = g.createLinearGradient(0, 0, 0, height);
-                    gradient.addColorStop(0, theme.color(hue, 70, 0.5));
-                    gradient.addColorStop(1, theme.color(hue, 60, 0));
-                    return gradient;
-                }
-            );
+            g.fillStyle = this.gradients.get(`spill|${theme.palette.id}|${bucket(hue, 2)}|${height}`, () => {
+                const gradient = g.createLinearGradient(0, 0, 0, height);
+                gradient.addColorStop(0, theme.color(hue, 70, 0.5));
+                gradient.addColorStop(1, theme.color(hue, 60, 0));
+                return gradient;
+            });
             g.fillRect(0, 0, key.width, height);
             g.restore();
         }

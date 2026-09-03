@@ -37,7 +37,15 @@ var _tone_0000_Test_sf2_file={
 ;`;
 
 const zone = (low: number, high: number): Voiceable =>
-    ({ low, high, detune: 6000, buffer: null, loopStart: 0, loopEnd: 0, loopable: false }) as unknown as Voiceable;
+    ({
+        low,
+        high,
+        detune: 6000,
+        buffer: null,
+        loopStart: 0,
+        loopEnd: 0,
+        loopable: false
+    }) as unknown as Voiceable;
 
 describe("parseWavetable", () => {
     it("читает имя и зоны", () => {
