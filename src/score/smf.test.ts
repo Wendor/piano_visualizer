@@ -60,7 +60,7 @@ suite("parseMidiFile", () => {
         expect(score.name).toBe("one.mid");
         expect(score.notes).toHaveLength(1);
         // 120 ударов в минуту: четверть = 0.5 с.
-        expect(score.notes[0]).toMatchObject({ midi: 60, velocity: 100, start: 0, track: 0 });
+        expect(score.notes[0]).toMatchObject({ midi: 60, velocity: 100, start: 0, part: 0 });
         expect(score.notes[0]!.end).toBeCloseTo(0.5, 6);
         expect(score.duration).toBeCloseTo(0.5, 6);
     });
@@ -138,8 +138,11 @@ suite("parseMidiFile", () => {
             "two.mid"
         );
 
-        expect(score.tracks).toBe(2);
-        expect(score.notes.map((note) => [note.midi, note.track])).toEqual([
+        expect(score.parts.map((part) => [part.track, part.channel])).toEqual([
+            [0, 0],
+            [1, 0]
+        ]);
+        expect(score.notes.map((note) => [note.midi, note.part])).toEqual([
             [60, 0],
             [72, 1]
         ]);
@@ -177,6 +180,49 @@ suite("parseMidiFile", () => {
 
         const held = score.notes.find((note) => note.midi === 60)!;
         expect(held.end).toBeCloseTo(1, 6);
+    });
+
+    it("в формате 0 делит партии по каналам и зовёт их по инструменту GM", () => {
+        const score = parseMidiFile(
+            file(0, DIVISION, [
+                track([
+                    [0, [0xc0, 0]], // канал 1 — рояль
+                    [0, [0xc1, 33]], // канал 2 — пальцевый бас
+                    [0, [0xc9, 0]], // канал 10 — всегда ударные
+                    [0, [0x90, 60, 90]],
+                    [0, [0x91, 40, 90]],
+                    [0, [0x99, 36, 90]],
+                    [DIVISION, [0x80, 60, 0]],
+                    [0, [0x81, 40, 0]],
+                    [0, [0x89, 36, 0]]
+                ])
+            ]),
+            "channels.mid"
+        );
+
+        expect(score.parts.map((part) => [part.channel, part.name, part.notes])).toEqual([
+            [0, "Рояль", 1],
+            [1, "Пальцевый бас", 1],
+            [9, "Ударные", 1]
+        ]);
+    });
+
+    it("предпочитает имя дорожки из файла", () => {
+        const utf8 = [...new TextEncoder().encode("Правая рука")];
+        const score = parseMidiFile(
+            file(1, DIVISION, [
+                track([
+                    [0, [0xff, 0x03, utf8.length, ...utf8]],
+                    [0, [0xc0, 40]],
+                    [0, [0x90, 60, 90]],
+                    [DIVISION, [0x80, 60, 0]]
+                ])
+            ]),
+            "named.mid"
+        );
+
+        expect(score.parts[0]!.name).toBe("Правая рука");
+        expect(score.parts[0]!.program).toBe(40);
     });
 
     it("внятно отказывается от SMPTE и от чужих файлов", () => {

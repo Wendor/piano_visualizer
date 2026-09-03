@@ -15,8 +15,8 @@ export interface PlaybackEvents extends Record<string, unknown> {
     /** Загружена новая партитура или выгружена (score = null). */
     score: { score: Score | null };
     state: { playing: boolean };
-    /** Изменился набор показываемых дорожек. */
-    tracks: Record<string, never>;
+    /** Изменился набор показываемых партий. */
+    parts: Record<string, never>;
 }
 
 /**
@@ -48,17 +48,17 @@ export class Playback {
         return this.score !== null;
     }
 
-    /** Показывается ли дорожка: выключенная не звучит и не рисуется. */
-    trackEnabled(track: number): boolean {
-        return !this.muted.has(track);
+    /** Показывается ли партия: выключенная не звучит и не рисуется. */
+    partEnabled(part: number): boolean {
+        return !this.muted.has(part);
     }
 
-    setTrackEnabled(track: number, on: boolean, sink: NoteSink): void {
-        if (on) this.muted.delete(track);
-        else this.muted.add(track);
+    setPartEnabled(part: number, on: boolean, sink: NoteSink): void {
+        if (on) this.muted.delete(part);
+        else this.muted.add(part);
         this.silence(sink);
         this.resync(sink);
-        this.events.emit("tracks", {});
+        this.events.emit("parts", {});
     }
 
     load(score: Score, sink: NoteSink): void {
@@ -108,7 +108,7 @@ export class Playback {
         while (this.nextNote < score.notes.length && score.notes[this.nextNote]!.start <= span.to) {
             const note = score.notes[this.nextNote]!;
             this.nextNote++;
-            if (this.muted.has(note.track)) continue;
+            if (this.muted.has(note.part)) continue;
             if (note.end <= span.to) continue; // нота целиком уместилась в кадр
             sink.noteOn(note.midi, note.velocity);
             this.sounding.push(note);
@@ -146,7 +146,7 @@ export class Playback {
         for (let i = this.nextNote - 1; i >= 0; i--) {
             const note = score.notes[i]!;
             if (note.start < from) break;
-            if (note.end <= time || this.muted.has(note.track)) continue;
+            if (note.end <= time || this.muted.has(note.part)) continue;
             sink.noteOn(note.midi, note.velocity);
             this.sounding.push(note);
         }

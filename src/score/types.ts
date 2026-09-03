@@ -6,7 +6,8 @@ export interface ScoreNote {
     /** Секунды от начала партитуры. */
     readonly start: number;
     readonly end: number;
-    readonly track: number;
+    /** Номер партии в `Score.parts`. */
+    readonly part: number;
 }
 
 export interface PedalEvent {
@@ -14,49 +15,59 @@ export interface PedalEvent {
     readonly on: boolean;
 }
 
+/**
+ * Партия — то, что человек называет «дорожкой»: пара «дорожка файла + канал».
+ * В формате 0 дорожка одна и партии различаются каналами, в формате 1 обычно
+ * наоборот; пара покрывает оба случая.
+ */
+export interface ScorePart {
+    readonly index: number;
+    readonly track: number;
+    readonly channel: number;
+    readonly name: string;
+    readonly program: number | null;
+    /** Сколько нот в партии — заполняется в `makeScore`. */
+    readonly notes: number;
+}
+
 export interface Score {
     readonly name: string;
     /** Отсортированы по началу — на этом держится поиск видимого окна. */
     readonly notes: readonly ScoreNote[];
     readonly pedal: readonly PedalEvent[];
+    readonly parts: readonly ScorePart[];
     readonly duration: number;
-    readonly tracks: number;
-    /** Сколько нот в каждой дорожке — по этому списку строится их выбор. */
-    readonly trackNotes: readonly number[];
     /** Самая длинная нота: насколько далеко назад смотреть при поиске окна. */
     readonly maxDuration: number;
 }
 
-export const EMPTY_SCORE: Score = {
-    name: "",
-    notes: [],
-    pedal: [],
-    duration: 0,
-    tracks: 0,
-    trackNotes: [],
-    maxDuration: 0
-};
+export type PartDraft = Omit<ScorePart, "notes">;
 
 /** Собрать партитуру из готовых нот: общий путь для файла и записи. */
-export function makeScore(name: string, notes: ScoreNote[], pedal: PedalEvent[], tracks: number): Score {
+export function makeScore(
+    name: string,
+    notes: ScoreNote[],
+    pedal: PedalEvent[],
+    parts: readonly PartDraft[]
+): Score {
     const sorted = [...notes].sort((a, b) => a.start - b.start || a.midi - b.midi);
+    const counts = new Array<number>(parts.length).fill(0);
     let duration = 0;
     let maxDuration = 0;
-    const trackNotes = new Array<number>(tracks).fill(0);
+
     for (const note of sorted) {
         if (note.end > duration) duration = note.end;
         const length = note.end - note.start;
         if (length > maxDuration) maxDuration = length;
-        if (note.track < trackNotes.length) trackNotes[note.track]! += 1;
-        else trackNotes[note.track] = 1;
+        if (note.part >= 0 && note.part < counts.length) counts[note.part]! += 1;
     }
+
     return {
         name,
         notes: sorted,
         pedal: [...pedal].sort((a, b) => a.time - b.time),
+        parts: parts.map((part, index) => ({ ...part, notes: counts[index] ?? 0 })),
         duration,
-        tracks,
-        trackNotes,
         maxDuration
     };
 }

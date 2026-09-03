@@ -38,7 +38,7 @@ export class FallingNotesLayer extends BaseLayer {
         for (let i = last - 1; i >= 0; i--) {
             const note = score.notes[i]!;
             if (note.start < earliest) break;
-            if (note.end <= now || !playback.trackEnabled(note.track)) continue;
+            if (note.end <= now || !playback.partEnabled(note.part)) continue;
 
             const key = layout.get(note.midi) ?? layout.get(layout.fold(note.midi));
             if (!key) continue;

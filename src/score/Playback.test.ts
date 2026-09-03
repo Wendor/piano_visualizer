@@ -32,15 +32,18 @@ class Sink implements NoteSink {
 const score = makeScore(
     "test.mid",
     [
-        { midi: 60, velocity: 90, start: 0, end: 1, track: 0 },
-        { midi: 64, velocity: 80, start: 0.5, end: 1.5, track: 0 },
-        { midi: 67, velocity: 70, start: 2, end: 2.5, track: 0 }
+        { midi: 60, velocity: 90, start: 0, end: 1, part: 0 },
+        { midi: 64, velocity: 80, start: 0.5, end: 1.5, part: 0 },
+        { midi: 67, velocity: 70, start: 2, end: 2.5, part: 1 }
     ],
     [
         { time: 0.2, on: true },
         { time: 1.8, on: false }
     ],
-    1
+    [
+        { index: 0, track: 0, channel: 0, name: "Рояль", program: 0 },
+        { index: 1, track: 0, channel: 1, name: "Бас", program: 33 }
+    ]
 );
 
 function loaded(): { playback: Playback; sink: Sink } {

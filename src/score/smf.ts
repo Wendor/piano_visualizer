@@ -4,17 +4,19 @@
  */
 
 import { makeScore } from "./types";
-import type { PedalEvent, Score, ScoreNote } from "./types";
+import type { PartDraft, PedalEvent, Score, ScoreNote } from "./types";
+import { instrumentName } from "./gm";
 
 interface RawEvent {
     readonly tick: number;
     readonly track: number;
-    readonly kind: "on" | "off" | "pedal" | "tempo";
+    readonly kind: "on" | "off" | "pedal" | "tempo" | "program" | "name" | "instrument";
     readonly midi: number;
     readonly velocity: number;
     readonly channel: number;
-    /** Для tempo — микросекунды на четверть; для pedal — значение контроллера. */
+    /** Для tempo — микросекунды на четверть, для pedal и program — значение. */
     readonly value: number;
+    readonly text?: string;
 }
 
 class Reader {
@@ -62,6 +64,13 @@ class Reader {
         for (let i = 0; i < length; i++) result += String.fromCharCode(this.view.getUint8(this.offset + i));
         this.offset += length;
         return result;
+    }
+
+    bytes(length: number): Uint8Array {
+        this.require(length);
+        const start = this.view.byteOffset + this.offset;
+        this.offset += length;
+        return new Uint8Array(this.view.buffer, start, length);
     }
 
     skip(length: number): void {
@@ -131,6 +140,20 @@ function readTrack(reader: Reader, end: number, track: number, out: RawEvent[]):
             if (meta === 0x51 && length === 3) {
                 const value = (reader.u8() << 16) | (reader.u8() << 8) | reader.u8();
                 out.push({ tick, track, kind: "tempo", midi: 0, velocity: 0, channel, value });
+            } else if (meta === 0x03 || meta === 0x04) {
+                const text = decodeText(reader.bytes(length));
+                if (text) {
+                    out.push({
+                        tick,
+                        track,
+                        kind: meta === 0x03 ? "name" : "instrument",
+                        midi: 0,
+                        velocity: 0,
+                        channel,
+                        value: 0,
+                        text
+                    });
+                }
             } else {
                 reader.skip(length);
             }
@@ -175,7 +198,11 @@ function readTrack(reader: Reader, end: number, track: number, out: RawEvent[]):
             case 0xe0:
                 reader.skip(2);
                 break;
-            case 0xc0:
+            case 0xc0: {
+                const program = reader.u8();
+                out.push({ tick, track, kind: "program", midi: 0, velocity: 0, channel, value: program });
+                break;
+            }
             case 0xd0:
                 reader.skip(1);
                 break;
@@ -187,17 +214,65 @@ function readTrack(reader: Reader, end: number, track: number, out: RawEvent[]):
     reader.offset = end;
 }
 
-/** Карта темпа: точки смены с накопленным временем в секундах. */
-function build(events: readonly RawEvent[], division: number, name: string, tracks: number): Score {
+/** Имена в файлах бывают в UTF-8, бывают в cp1251 — пробуем по очереди. */
+function decodeText(bytes: Uint8Array): string {
+    for (const encoding of ["utf-8", "windows-1251"]) {
+        try {
+            const text = new TextDecoder(encoding, { fatal: encoding === "utf-8" }).decode(bytes);
+            if (text.trim()) return text.trim();
+            return "";
+        } catch {
+            /* следующая кодировка */
+        }
+    }
+    return "";
+}
+
+interface PartAccumulator extends PartDraft {
+    trackName: string | null;
+    instrumentName: string | null;
+}
+
+/**
+ * Сводит сырые события в партитуру: тики в секунды по карте темпа, ноты в пары
+ * «нажали — отпустили», партии — по паре «дорожка + канал».
+ */
+function build(events: readonly RawEvent[], division: number, name: string, _tracks: number): Score {
     const notes: ScoreNote[] = [];
     const pedal: PedalEvent[] = [];
-    const pending = new Map<number, { midi: number; start: number; velocity: number; track: number }[]>();
+    const pending = new Map<number, { midi: number; start: number; velocity: number; part: number }[]>();
+
+    const parts: PartAccumulator[] = [];
+    const partIndex = new Map<number, number>();
+    const trackNames = new Map<number, string>();
+    const instrumentNames = new Map<number, string>();
+    const channelsInTrack = new Map<number, Set<number>>();
+
+    const partFor = (track: number, channel: number): number => {
+        const key = track * 16 + channel;
+        const existing = partIndex.get(key);
+        if (existing !== undefined) return existing;
+        const index = parts.length;
+        parts.push({
+            index,
+            track,
+            channel,
+            name: "",
+            program: null,
+            trackName: null,
+            instrumentName: null
+        });
+        partIndex.set(key, index);
+        const used = channelsInTrack.get(track) ?? new Set<number>();
+        used.add(channel);
+        channelsInTrack.set(track, used);
+        return index;
+    };
 
     let tempo = 500000; // 120 ударов в минуту, пока файл не сказал иное
     let lastTick = 0;
     let lastSeconds = 0;
     const seconds = (tick: number): number => lastSeconds + ((tick - lastTick) * tempo) / (division * 1e6);
-
     let pedalDown = false;
 
     for (const event of events) {
@@ -210,6 +285,22 @@ function build(events: readonly RawEvent[], division: number, name: string, trac
             continue;
         }
 
+        if (event.kind === "name") {
+            if (!trackNames.has(event.track) && event.text) trackNames.set(event.track, event.text);
+            continue;
+        }
+
+        if (event.kind === "instrument") {
+            if (!instrumentNames.has(event.track) && event.text) instrumentNames.set(event.track, event.text);
+            continue;
+        }
+
+        if (event.kind === "program") {
+            const part = parts[partFor(event.track, event.channel)]!;
+            if (part.program === null) parts[part.index] = { ...part, program: event.value };
+            continue;
+        }
+
         if (event.kind === "pedal") {
             const on = event.value >= 64;
             if (on !== pedalDown) {
@@ -219,10 +310,12 @@ function build(events: readonly RawEvent[], division: number, name: string, trac
             continue;
         }
 
-        const key = event.channel * 128 + event.midi;
+        const part = partFor(event.track, event.channel);
+        const key = (event.track * 16 + event.channel) * 128 + event.midi;
+
         if (event.kind === "on") {
             const stack = pending.get(key) ?? [];
-            stack.push({ midi: event.midi, start: time, velocity: event.velocity, track: event.track });
+            stack.push({ midi: event.midi, start: time, velocity: event.velocity, part });
             pending.set(key, stack);
             continue;
         }
@@ -235,7 +328,7 @@ function build(events: readonly RawEvent[], division: number, name: string, trac
             velocity: started.velocity,
             start: started.start,
             end: Math.max(time, started.start + 0.02),
-            track: started.track
+            part: started.part
         });
     }
 
@@ -248,11 +341,37 @@ function build(events: readonly RawEvent[], division: number, name: string, trac
                 velocity: started.velocity,
                 start: started.start,
                 end: Math.max(tail, started.start + 0.02),
-                track: started.track
+                part: started.part
             });
         }
     }
 
     if (notes.length === 0) throw new Error("В файле нет нот");
-    return makeScore(name, notes, pedal, tracks);
+
+    const named: PartDraft[] = parts.map((part) => ({
+        index: part.index,
+        track: part.track,
+        channel: part.channel,
+        program: part.program,
+        name: partName(part, trackNames, instrumentNames, channelsInTrack)
+    }));
+
+    return makeScore(name, notes, pedal, named);
+}
+
+/** Имя дорожки, имя инструмента из файла, GM-инструмент, номер канала. */
+function partName(
+    part: PartAccumulator,
+    trackNames: Map<number, string>,
+    instrumentNames: Map<number, string>,
+    channelsInTrack: Map<number, Set<number>>
+): string {
+    const fromFile = trackNames.get(part.track) ?? instrumentNames.get(part.track) ?? null;
+    const fromProgram = instrumentName(part.program, part.channel);
+    const shared = (channelsInTrack.get(part.track)?.size ?? 1) > 1;
+
+    if (fromFile && shared && fromProgram) return `${fromFile} · ${fromProgram}`;
+    if (fromFile) return fromFile;
+    if (fromProgram) return fromProgram;
+    return `Канал ${part.channel + 1}`;
 }

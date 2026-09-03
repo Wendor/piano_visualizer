@@ -239,55 +239,6 @@ canvas {
     margin-bottom: 7px;
 }
 
-.transport__speed {
-    appearance: none;
-    padding-right: 20px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23cfe3ff' stroke-width='1.4'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 7px center;
-    background-size: 8px 5px;
-}
-
-.transport__loop {
-    opacity: 0.5;
-    font-size: 14px;
-}
-
-.transport__loop--on {
-    opacity: 1;
-    border-color: rgba(110, 168, 255, 0.5);
-    background: rgba(110, 168, 255, 0.16);
-    color: #cfe3ff;
-}
-
-.transport__tracks {
-    display: flex;
-    flex: none;
-    gap: 4px;
-    margin-left: auto;
-}
-
-.transport__chip {
-    min-width: 22px;
-    height: 20px;
-    padding: 0 5px;
-    border: 1px solid rgba(110, 168, 255, 0.45);
-    border-radius: 5px;
-    background: rgba(110, 168, 255, 0.18);
-    color: #cfe3ff;
-    font: inherit;
-    font-size: 10px;
-    line-height: 1;
-    cursor: pointer;
-    transition: opacity 0.2s ease, background 0.2s ease;
-}
-
-.transport__chip--off {
-    border-color: rgba(255, 255, 255, 0.14);
-    background: transparent;
-    color: rgba(255, 255, 255, 0.35);
-}
-
 .transport__name {
     overflow: hidden;
     white-space: nowrap;
@@ -309,6 +260,7 @@ canvas {
     cursor: pointer;
 }
 
+/* Полоса тонкая, а попасть по ней надо мышью — расширяем зону нажатия. */
 .transport__track::after {
     content: "";
     position: absolute;
@@ -321,6 +273,147 @@ canvas {
     border-radius: 3px;
     background: linear-gradient(90deg, rgba(110, 168, 255, 0.55), #9fd0ff);
     box-shadow: 0 0 12px rgba(110, 168, 255, 0.45);
+}
+
+.transport__speed {
+    font-variant-numeric: tabular-nums;
+}
+
+.transport__trigger--on {
+    border-color: rgba(110, 168, 255, 0.65);
+    background: rgba(110, 168, 255, 0.24);
+    color: #cfe3ff;
+}
+
+.transport__loop {
+    opacity: 0.5;
+    font-size: 14px;
+}
+
+.transport__loop--on {
+    opacity: 1;
+    border-color: rgba(110, 168, 255, 0.5);
+    background: rgba(110, 168, 255, 0.16);
+    color: #cfe3ff;
+}
+
+.transport__parts {
+    flex: none;
+    margin-left: auto;
+    height: 20px;
+    padding: 0 8px;
+    border: 1px solid rgba(110, 168, 255, 0.35);
+    border-radius: 5px;
+    background: rgba(110, 168, 255, 0.12);
+    color: #cfe3ff;
+    font: inherit;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.transport__parts:hover {
+    background: rgba(110, 168, 255, 0.24);
+    border-color: rgba(110, 168, 255, 0.65);
+}
+
+.transport__menu {
+    position: absolute;
+    right: 12px;
+    bottom: calc(100% + 8px);
+    z-index: 1;
+    min-width: 230px;
+    max-height: 46vh;
+    overflow-y: auto;
+    padding: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background: rgba(10, 12, 19, 0.96);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.transport__option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.88);
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-align: left;
+    text-transform: none;
+    cursor: pointer;
+}
+
+.transport__option:hover {
+    background: rgba(110, 168, 255, 0.14);
+}
+
+.transport__mark {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    border: 1px solid rgba(143, 192, 255, 0.75);
+    border-radius: 3px;
+    background: rgba(143, 192, 255, 0.9);
+    color: #0a0c13;
+    font-size: 9px;
+    line-height: 1;
+}
+
+.transport__mark::after {
+    content: "✓";
+}
+
+.transport__option-name {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.transport__option-hint {
+    flex: none;
+    color: rgba(255, 255, 255, 0.35);
+    font-variant-numeric: tabular-nums;
+}
+
+.transport__option--off {
+    color: rgba(255, 255, 255, 0.35);
+}
+
+.transport__option--off .transport__mark {
+    border-color: rgba(255, 255, 255, 0.22);
+    background: transparent;
+}
+
+.transport__option--off .transport__mark::after {
+    content: "";
+}
+
+.transport__option--action {
+    margin-top: 4px;
+    padding-left: 29px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0;
+    color: rgba(143, 192, 255, 0.85);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
 }
 
 /* --- приём файла --------------------------------------------------------- */
