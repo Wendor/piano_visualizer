@@ -170,13 +170,16 @@ export class Scene {
         // Пока клавиши зажаты, энергия не падает ниже уровня «звучит аккорд».
         const floor = Math.min(0.55, this.active.size * 0.09);
         this.energy = Math.max(floor, this.energy - decay);
+        // Вышедшую историю выжимаем на месте, одним проходом: копия массива
+        // каждый кадр стоит и мусора, и предела на длину списка аргументов.
         const cutoff = this.time - this.retention;
-        let alive = 0;
-        for (const note of this.notes) if (note.end === null || note.end > cutoff) alive++;
-        if (alive !== this.notes.length) {
-            const kept = this.notes.filter((note) => note.end === null || note.end > cutoff);
-            this.notes.length = 0;
-            this.notes.push(...kept);
+        let kept = 0;
+        for (let i = 0; i < this.notes.length; i++) {
+            const note = this.notes[i]!;
+            if (note.end !== null && note.end <= cutoff) continue;
+            if (kept !== i) this.notes[kept] = note;
+            kept++;
         }
+        if (kept !== this.notes.length) this.notes.length = kept;
     }
 }

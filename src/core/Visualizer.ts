@@ -1,6 +1,8 @@
 import { GlowBuffer } from "./GlowBuffer";
+import { paintStack } from "./paint";
 import { Quality } from "./Quality";
 import { layerRegistry, inputRegistry } from "./registry";
+import { coalesce } from "./schedule";
 import { Scene } from "./Scene";
 import type { Layer, Viewport } from "./types";
 import type { InputSource } from "../input/types";
@@ -34,7 +36,9 @@ export class Visualizer {
     private lastTime = 0;
     private running = false;
     private readonly layerHooks = new Set<LayerHook>();
-    private readonly onResize = () => this.resize();
+    // Событий resize приходит поток, а перестройка холста и кэшей дорогая:
+    // на кадр хватает одной.
+    private readonly onResize = coalesce(() => this.resize());
 
     constructor(options: VisualizerOptions) {
         this.canvas = options.canvas;
@@ -193,17 +197,12 @@ export class Visualizer {
         for (const layer of this.layerList) if (layer.enabled) layer.update?.(scene, dt);
 
         const glowCtx = this.glow.begin(scene.viewport);
-        for (const layer of this.layerList) if (layer.enabled) layer.drawGlow?.(glowCtx, scene);
+        paintStack(glowCtx, this.layerList, "drawGlow", scene);
 
         ctx.setTransform(scene.viewport.dpr, 0, 0, scene.viewport.dpr, 0, 0);
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
         ctx.filter = "none";
-        for (const layer of this.layerList) {
-            if (!layer.enabled || !layer.draw) continue;
-            ctx.save();
-            layer.draw(ctx, scene);
-            ctx.restore();
-        }
+        paintStack(ctx, this.layerList, "draw", scene);
     }
 }

@@ -40,3 +40,58 @@ describe("энергия сцены", () => {
         expect(scene.energy).toBeLessThan(0.05);
     });
 });
+
+describe("запас истории", () => {
+    it("отпущенная нота живёт запрошенное слоем время", () => {
+        const scene = ready();
+        scene.requestRetention("test", 2);
+        scene.noteOn(60, 100);
+        scene.noteOff(60);
+
+        scene.advance(1.5);
+        expect(scene.notes.length).toBe(1);
+
+        scene.advance(1);
+        expect(scene.notes.length).toBe(0);
+    });
+
+    it("зажатая нота не уходит из истории, сколько бы ни прошло", () => {
+        const scene = ready();
+        scene.requestRetention("test", 2);
+        scene.noteOn(60, 100);
+
+        for (let i = 0; i < 600; i++) scene.advance(1 / 60);
+        expect(scene.notes.length).toBe(1);
+    });
+
+    it("запас берётся по самому жадному слою", () => {
+        const scene = ready();
+        scene.requestRetention("short", 2);
+        scene.requestRetention("long", 6);
+        scene.noteOn(60, 100);
+        scene.noteOff(60);
+
+        scene.advance(4);
+        expect(scene.notes.length).toBe(1);
+    });
+
+    it("уборка не роняет сцену на длинной истории", () => {
+        const scene = ready();
+        scene.requestRetention("test", 2);
+
+        scene.advance(2.4);
+        scene.noteOn(60, 100); // одинокая нота, которая выйдет из запаса первой
+        scene.noteOff(60);
+        scene.advance(0.1);
+
+        for (let i = 0; i < 130_000; i++) {
+            scene.noteOn(60 + (i % 24), 100);
+            scene.noteOff(60 + (i % 24));
+        }
+
+        // Запас перешагнул одинокую ноту, но не догнал остальные: уборка
+        // должна оставить всю сотню тысяч.
+        expect(() => scene.advance(1.95)).not.toThrow();
+        expect(scene.notes.length).toBe(130_000);
+    });
+});
