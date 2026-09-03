@@ -191,3 +191,47 @@ suite("Playback", () => {
         expect(sink.calls).toEqual([]);
     });
 });
+
+suite("короткие ноты", () => {
+    /** Стаккато короче одного кадра плюс длинная нота, чтобы файл не кончился. */
+    const staccato = makeScore(
+        "staccato.mid",
+        [
+            { midi: 72, velocity: 100, start: 0.02, end: 0.05, part: 0 },
+            { midi: 48, velocity: 60, start: 3, end: 4, part: 0 }
+        ],
+        [],
+        [{ index: 0, track: 0, channel: 0, name: "Рояль", program: 0 }]
+    );
+
+    function playing(): { playback: Playback; sink: Sink } {
+        const sink = new Sink();
+        const playback = new Playback();
+        playback.load(staccato, sink);
+        playback.transport.play();
+        sink.calls.length = 0;
+        return { playback, sink };
+    }
+
+    it("нота короче кадра всё равно звучит", () => {
+        const { playback, sink } = playing();
+        playback.advance(0.1, sink); // кадр длиннее самой ноты
+        expect(sink.calls).toContain("on:72:100");
+    });
+
+    it("короткая нота гаснет на следующем кадре и не виснет", () => {
+        const { playback, sink } = playing();
+        playback.advance(0.1, sink);
+        playback.advance(0.1, sink);
+        expect(sink.held.size).toBe(0);
+        expect(sink.calls).toContain("off:72");
+    });
+
+    it("выключенная партия молчит и на коротких нотах", () => {
+        const { playback, sink } = playing();
+        playback.setPartEnabled(0, false, sink);
+        sink.calls.length = 0;
+        playback.advance(0.1, sink);
+        expect(sink.calls).not.toContain("on:72:100");
+    });
+});

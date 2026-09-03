@@ -1,7 +1,19 @@
 import { Emitter } from "../core/Emitter";
 import { Transport } from "./Transport";
 import { firstNoteAtOrAfter } from "./types";
-import type { Score, ScoreNote } from "./types";
+import type { Score } from "./types";
+
+/**
+ * Сколько нота звучит как минимум. Нота короче кадра иначе выпала бы целиком:
+ * на скорости ×2 и просевших кадрах это уносит стаккато и тридцать вторые.
+ */
+const MIN_SOUND = 0.03;
+
+/** Звучащая нота: до какого времени её держать. */
+interface Sounding {
+    readonly midi: number;
+    readonly until: number;
+}
 
 /** Куда плеер отдаёт ноты. Сцена подходит как есть. */
 export interface NoteSink {
@@ -31,7 +43,7 @@ export class Playback {
 
     private nextNote = 0;
     private nextPedal = 0;
-    private readonly sounding: ScoreNote[] = [];
+    private readonly sounding: Sounding[] = [];
     private readonly muted = new Set<number>();
 
     constructor() {
@@ -99,9 +111,9 @@ export class Playback {
         }
 
         for (let i = this.sounding.length - 1; i >= 0; i--) {
-            const note = this.sounding[i]!;
-            if (note.end > span.to) continue;
-            sink.noteOff(note.midi);
+            const voice = this.sounding[i]!;
+            if (voice.until > span.to) continue;
+            sink.noteOff(voice.midi);
             this.sounding.splice(i, 1);
         }
 
@@ -109,9 +121,9 @@ export class Playback {
             const note = score.notes[this.nextNote]!;
             this.nextNote++;
             if (this.muted.has(note.part)) continue;
-            if (note.end <= span.to) continue; // нота целиком уместилась в кадр
             sink.noteOn(note.midi, note.velocity, { part: note.part });
-            this.sounding.push(note);
+            // Нота, целиком уместившаяся в кадр, гасится не раньше следующего.
+            this.sounding.push({ midi: note.midi, until: Math.max(note.end, span.to + MIN_SOUND) });
         }
 
         // Цикл уже вернул время в ноль — пересобираем указатели.
@@ -148,7 +160,7 @@ export class Playback {
             if (note.start < from) break;
             if (note.end <= time || this.muted.has(note.part)) continue;
             sink.noteOn(note.midi, note.velocity, { part: note.part });
-            this.sounding.push(note);
+            this.sounding.push({ midi: note.midi, until: note.end });
         }
     }
 }
