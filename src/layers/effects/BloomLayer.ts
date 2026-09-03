@@ -3,6 +3,7 @@ import type { Scene } from "../../core/Scene";
 import type { GlowBuffer } from "../../core/GlowBuffer";
 import type { Quality } from "../../core/Quality";
 import { clamp } from "../../core/math";
+import { bloomPyramid } from "./bloomPyramid";
 import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
 
@@ -17,13 +18,6 @@ export interface BloomOptions {
     passes: BloomPass[];
 }
 
-const supportsFilter = ((): boolean => {
-    const probe = document.createElement("canvas").getContext("2d");
-    if (!probe) return false;
-    probe.filter = "blur(2px)";
-    return probe.filter === "blur(2px)";
-})();
-
 /** Накопленный буфер свечения кладётся на сцену несколькими размытиями. */
 export class BloomLayer extends BaseLayer {
     readonly id = "effects.bloom";
@@ -34,6 +28,8 @@ export class BloomLayer extends BaseLayer {
     /** Накопитель размытий: размер буфера свечения, не экрана. */
     private readonly acc = document.createElement("canvas");
     private readonly accCtx: CanvasRenderingContext2D;
+    /** Ступени пирамиды по величине уменьшения; переживают кадр. */
+    private readonly steps = new Map<number, HTMLCanvasElement>();
 
     constructor(
         private readonly glow: GlowBuffer,
@@ -81,6 +77,11 @@ export class BloomLayer extends BaseLayer {
      * Размытие считается внутри буфера свечения, а не на экране: буфер вчетверо
      * меньше по стороне, значит работы в шестнадцать раз меньше, а после
      * растягивания разницы не видно — картинка и так мягкая.
+     *
+     * Самого фильтра размытия здесь нет. `filter: blur()` на слабых машинах
+     * уходит на программный путь и стоит миллисекунды даже на буфере в сотню
+     * пикселей по стороне; вместо него — пирамида уменьшений, где размывает
+     * та же билинейная выборка, которой картинка и так выводится на экран.
      */
     override draw(g: CanvasRenderingContext2D, scene: Scene): void {
         const { strength } = this.options;
@@ -90,38 +91,72 @@ export class BloomLayer extends BaseLayer {
         const source = this.glow.canvas;
         if (source.width < 1 || source.height < 1) return;
 
-        g.globalCompositeOperation = "lighter";
-
-        if (!supportsFilter) {
-            g.globalAlpha = Math.min(1, 0.9 * strength);
-            g.drawImage(source, 0, 0, width, height);
-            g.globalAlpha = 1;
-            return;
-        }
-
         const count = Math.max(1, Math.min(this.options.passes.length, this.quality.profile.bloomPasses));
-        const radius = this.glow.scaleFactor;
-        const acc = this.accCtx;
+        const levels = bloomPyramid(
+            source.width,
+            source.height,
+            this.options.passes.slice(0, count),
+            this.glow.scaleFactor
+        );
+        if (levels.length === 0) return;
+
+        // Уровни строятся друг из друга: последовательное деление пополам
+        // усредняет мягче, чем одно уменьшение сразу в восемь раз.
+        const made = new Map<number, HTMLCanvasElement>([[1, source]]);
+        let previous: HTMLCanvasElement = source;
+        const deepest = levels[levels.length - 1]!.scale;
+        for (let scale = 2; scale <= deepest; scale *= 2) {
+            const step = this.step(scale, source.width, source.height);
+            const ctx = step.getContext("2d");
+            if (!ctx) break;
+            ctx.globalCompositeOperation = "source-over";
+            ctx.globalAlpha = 1;
+            ctx.clearRect(0, 0, step.width, step.height);
+            ctx.drawImage(previous, 0, 0, step.width, step.height);
+            made.set(scale, step);
+            previous = step;
+        }
 
         if (this.acc.width !== source.width || this.acc.height !== source.height) {
             this.acc.width = source.width;
             this.acc.height = source.height;
         }
+        const acc = this.accCtx;
         acc.globalCompositeOperation = "source-over";
+        acc.globalAlpha = 1;
         acc.clearRect(0, 0, this.acc.width, this.acc.height);
         acc.globalCompositeOperation = "lighter";
-
-        for (let i = 0; i < count; i++) {
-            const pass = this.options.passes[i]!;
-            acc.filter = `blur(${(pass.blur * radius).toFixed(2)}px)`;
-            acc.globalAlpha = Math.min(1, pass.alpha * strength);
-            acc.drawImage(source, 0, 0);
+        for (const level of levels) {
+            const layer = made.get(level.scale);
+            if (!layer) continue;
+            acc.globalAlpha = Math.min(1, level.alpha * strength);
+            acc.drawImage(layer, 0, 0, this.acc.width, this.acc.height);
         }
-        acc.filter = "none";
         acc.globalAlpha = 1;
 
-        // Все проходы уже сложены — на экран уходит один растянутый рисунок.
+        // Все уровни уже сложены — на экран уходит один растянутый рисунок.
+        g.globalCompositeOperation = "lighter";
         g.globalAlpha = 1;
         g.drawImage(this.acc, 0, 0, width, height);
+    }
+
+    override dispose(): void {
+        this.steps.clear();
+    }
+
+    /** Холст ступени, уменьшенной в `scale` раз. Переживает кадры. */
+    private step(scale: number, sourceWidth: number, sourceHeight: number): HTMLCanvasElement {
+        const width = Math.max(1, Math.round(sourceWidth / scale));
+        const height = Math.max(1, Math.round(sourceHeight / scale));
+        let canvas = this.steps.get(scale);
+        if (!canvas) {
+            canvas = document.createElement("canvas");
+            this.steps.set(scale, canvas);
+        }
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+        }
+        return canvas;
     }
 }
