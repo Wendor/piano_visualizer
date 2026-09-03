@@ -489,3 +489,15 @@ canvas {
     font-variant-numeric: tabular-nums;
     pointer-events: none;
 }
+
+.fps__detail {
+    margin-top: 3px;
+    text-transform: none;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255, 255, 255, 0.58);
+}
+
+.fps__detail:first-of-type {
+    margin-top: 6px;
+}

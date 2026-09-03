@@ -40,7 +40,7 @@ function groupOf(layer: Layer): ParamGroup {
 
 const settingsStore = new SettingsStore();
 const persistence = new SettingsPersistence(settingsStore);
-const fpsMeter = new FpsMeter(visualizer.quality);
+const fpsMeter = new FpsMeter(visualizer);
 
 // Порядок владельцев задаёт порядок строк внутри группы: качество должно
 // стоять раньше «Сбросить всё», иначе оно окажется в хвосте панели.

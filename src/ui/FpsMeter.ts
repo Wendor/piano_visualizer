@@ -1,16 +1,21 @@
-import type { Quality } from "../core/Quality";
+import type { Visualizer } from "../core/Visualizer";
 import type { ParamSpec } from "../settings/types";
+import { profileLines } from "./profile";
 
 /**
- * Счётчик кадров. Читает усреднённую оценку из ступени качества и обновляет
- * текст четыре раза в секунду: писать в DOM каждый кадр — самому мешать замеру.
+ * Счётчик кадров и замер по слоям. Читает усреднённую оценку из ступени
+ * качества и обновляет текст четыре раза в секунду: писать в DOM каждый кадр —
+ * самому мешать замеру.
+ *
+ * Замер по слоям нужен там, где отладчика нет: на телевизоре видно только то,
+ * что мы сами вывели на экран.
  */
 export class FpsMeter {
     private readonly root = document.createElement("div");
     private timer = 0;
     private shown = false;
 
-    constructor(private readonly quality: Quality) {
+    constructor(private readonly visualizer: Visualizer) {
         this.root.className = "fps";
         this.root.hidden = true;
         document.body.appendChild(this.root);
@@ -25,9 +30,19 @@ export class FpsMeter {
         this.shown = on;
         this.root.hidden = !on;
         window.clearInterval(this.timer);
-        if (!on) return;
+        if (!on) {
+            this.setProfiling(false);
+            return;
+        }
         this.update();
         this.timer = window.setInterval(() => this.update(), 250);
+    }
+
+    /** Разбор кадра по слоям: сам счётчик при этом включается. */
+    setProfiling(on: boolean): void {
+        if (on && !this.shown) this.setVisible(true);
+        this.visualizer.profiler.setEnabled(on);
+        if (this.shown) this.update();
     }
 
     params(): ParamSpec[] {
@@ -39,6 +54,14 @@ export class FpsMeter {
                 group: "system",
                 get: () => this.shown,
                 set: (value) => this.setVisible(value)
+            },
+            {
+                type: "boolean",
+                key: "profile",
+                label: "Разбор кадра",
+                group: "system",
+                get: () => this.visualizer.profiler.active,
+                set: (value) => this.setProfiling(value)
             }
         ];
     }
@@ -49,7 +72,23 @@ export class FpsMeter {
     }
 
     private update(): void {
-        const work = this.quality.work.toFixed(1);
-        this.root.textContent = `${Math.round(this.quality.fps)} к/с · ${work} мс · ${this.quality.title}`;
+        const { quality, profiler, canvas } = this.visualizer;
+        const lines = [`${Math.round(quality.fps)} к/с · ${quality.work.toFixed(1)} мс · ${quality.title}`];
+
+        if (profiler.active) {
+            // Размер холста — первое, что стоит увидеть на большом экране:
+            // телевизор на 4K просит вчетверо больше пикселей, чем ноутбук.
+            lines.push(`холст ${canvas.width}×${canvas.height}`);
+            lines.push(...profileLines(profiler.rows()));
+        }
+
+        this.root.textContent = "";
+        for (const [index, line] of lines.entries()) {
+            const row = document.createElement("div");
+            // Идентификаторы слоёв набраны латиницей: капитель их только портит.
+            if (index > 0) row.className = "fps__detail";
+            row.textContent = line;
+            this.root.appendChild(row);
+        }
     }
 }

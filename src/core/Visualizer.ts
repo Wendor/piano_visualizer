@@ -1,3 +1,4 @@
+import { FrameProfiler } from "./FrameProfiler";
 import { GlowBuffer } from "./GlowBuffer";
 import { paintStack, updateStack } from "./paint";
 import { Quality } from "./Quality";
@@ -5,7 +6,8 @@ import { layerRegistry, inputRegistry } from "./registry";
 import { coalesce } from "./schedule";
 import { Scene } from "./Scene";
 import type { LayerFault } from "./paint";
-import type { Layer, Viewport } from "./types";
+import type { Layer } from "./types";
+import { canvasSize, resolveViewport } from "./viewport";
 import type { InputSource } from "../input/types";
 
 /** Слой добавлен (`added = true`) или удалён. */
@@ -29,6 +31,8 @@ export class Visualizer {
     readonly glow: GlowBuffer;
     /** Ступень качества: она же решает, в каком разрешении рисовать. */
     readonly quality = new Quality();
+    /** Замер кадра по слоям. Выключен, пока его не попросят. */
+    readonly profiler = new FrameProfiler();
 
     private readonly layerList: Layer[] = [];
     private readonly inputList: InputSource[] = [];
@@ -171,18 +175,25 @@ export class Visualizer {
     }
 
     resize(): void {
-        const { renderScale, glowScale } = this.quality.profile;
+        const { renderScale, glowScale, maxPixels } = this.quality.profile;
         // Холст меньше экрана, а CSS-размер прежний: браузер растянет картинку
         // при выводе — это самый дешёвый способ вернуть кадр в бюджет.
-        const dpr = Math.min(window.devicePixelRatio || 1, this.maxDpr) * renderScale;
-        const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight, dpr };
+        const viewport = resolveViewport({
+            width: window.innerWidth,
+            height: window.innerHeight,
+            devicePixelRatio: window.devicePixelRatio || 1,
+            maxDpr: this.maxDpr,
+            renderScale,
+            maxPixels
+        });
+        const size = canvasSize(viewport);
         this.glow.setScale(glowScale);
 
-        this.canvas.width = Math.round(viewport.width * dpr);
-        this.canvas.height = Math.round(viewport.height * dpr);
+        this.canvas.width = size.width;
+        this.canvas.height = size.height;
         this.canvas.style.width = `${viewport.width}px`;
         this.canvas.style.height = `${viewport.height}px`;
-        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        this.ctx.setTransform(viewport.dpr, 0, 0, viewport.dpr, 0, 0);
 
         this.glow.resize(viewport);
         this.scene.resize(viewport);
@@ -202,6 +213,7 @@ export class Visualizer {
         this.scene.advance(dt);
         this.render(dt);
         this.quality.sample(performance.now() - started, frameMs, dt);
+        this.profiler.endFrame();
         if (this.running) this.frame = requestAnimationFrame(this.tick);
     };
 
@@ -209,15 +221,15 @@ export class Visualizer {
     render(dt: number): void {
         const { scene, ctx } = this;
 
-        updateStack(this.layerList, scene, dt, this.onFault);
+        updateStack(this.layerList, scene, dt, this.onFault, this.profiler);
 
         const glowCtx = this.glow.begin(scene.viewport);
-        paintStack(glowCtx, this.layerList, "drawGlow", scene, this.onFault);
+        paintStack(glowCtx, this.layerList, "drawGlow", scene, this.onFault, this.profiler);
 
         ctx.setTransform(scene.viewport.dpr, 0, 0, scene.viewport.dpr, 0, 0);
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
         ctx.filter = "none";
-        paintStack(ctx, this.layerList, "draw", scene, this.onFault);
+        paintStack(ctx, this.layerList, "draw", scene, this.onFault, this.profiler);
     }
 }

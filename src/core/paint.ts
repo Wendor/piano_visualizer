@@ -1,3 +1,4 @@
+import type { FrameProfiler } from "./FrameProfiler";
 import type { Scene } from "./Scene";
 import type { Layer } from "./types";
 
@@ -17,14 +18,16 @@ export function paintStack(
     layers: readonly Layer[],
     brush: Brush,
     scene: Scene,
-    onFault?: LayerFault
+    onFault?: LayerFault,
+    profiler?: FrameProfiler
 ): void {
     for (const layer of layers) {
         const paint = layer[brush];
         if (!layer.enabled || !paint) continue;
         g.save();
         try {
-            paint.call(layer, g, scene);
+            if (profiler) profiler.measure(layer.id, () => paint.call(layer, g, scene));
+            else paint.call(layer, g, scene);
         } catch (error) {
             fault(layer, error, onFault);
         } finally {
@@ -36,11 +39,19 @@ export function paintStack(
 }
 
 /** Шаг обновления состояния слоёв — с той же защитой, что и отрисовка. */
-export function updateStack(layers: readonly Layer[], scene: Scene, dt: number, onFault?: LayerFault): void {
+export function updateStack(
+    layers: readonly Layer[],
+    scene: Scene,
+    dt: number,
+    onFault?: LayerFault,
+    profiler?: FrameProfiler
+): void {
     for (const layer of layers) {
-        if (!layer.enabled || !layer.update) continue;
+        const update = layer.update;
+        if (!layer.enabled || !update) continue;
         try {
-            layer.update(scene, dt);
+            if (profiler) profiler.measure(layer.id, () => update.call(layer, scene, dt));
+            else update.call(layer, scene, dt);
         } catch (error) {
             fault(layer, error, onFault);
         }

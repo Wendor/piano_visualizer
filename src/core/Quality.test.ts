@@ -70,3 +70,20 @@ describe("Quality", () => {
         expect(quality.title).toBe("среднее");
     });
 });
+
+describe("Quality: потолок площади холста", () => {
+    it("на высокой ступени пропускает ноутбук с Retina целиком", () => {
+        const quality = new Quality();
+        // 1512×982 при плотности 2 — рабочий стол MacBook Pro.
+        expect(quality.profile.maxPixels).toBeGreaterThanOrEqual(1512 * 2 * 982 * 2);
+    });
+
+    it("на низкой ступени просит меньше пикселей, чем на высокой", () => {
+        const quality = new Quality();
+        const high = quality.profile.maxPixels;
+        quality.setMode("low");
+        expect(quality.profile.maxPixels).toBeLessThan(high);
+        // Телевизор на 4K должен уместиться заметно ниже своих 8.3 мегапикселя.
+        expect(quality.profile.maxPixels).toBeLessThan(3840 * 2160 * 0.3);
+    });
+});

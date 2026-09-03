@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FrameProfiler } from "./FrameProfiler";
 import { paintStack, updateStack } from "./paint";
 import type { Scene } from "./Scene";
 import type { Layer } from "./types";
@@ -130,5 +131,60 @@ describe("сбойный слой", () => {
 
         expect(good.enabled).toBe(true);
         expect(updated).toEqual(["good", "good"]);
+    });
+});
+
+describe("обход слоёв под замером", () => {
+    /** Часы под управлением теста. */
+    function clock(): { now: () => number; advance: (ms: number) => void } {
+        let value = 0;
+        return { now: () => value, advance: (ms) => void (value += ms) };
+    }
+
+    it("записывает отрисовку под идентификатором слоя", () => {
+        const time = clock();
+        const profiler = new FrameProfiler(time.now);
+        profiler.setEnabled(true);
+
+        const bloom = layer("effects.bloom", { draw: () => time.advance(9) });
+        const dust = layer("effects.dust", { draw: () => time.advance(2) });
+
+        paintStack(context(), [bloom, dust], "draw", scene, undefined, profiler);
+        profiler.endFrame();
+
+        expect(profiler.rows()).toEqual([
+            { label: "effects.bloom", ms: 9 },
+            { label: "effects.dust", ms: 2 }
+        ]);
+    });
+
+    it("складывает обновление и отрисовку одного слоя в одну строку", () => {
+        const time = clock();
+        const profiler = new FrameProfiler(time.now);
+        profiler.setEnabled(true);
+
+        const sparks = layer("effects.sparks", {
+            update: () => time.advance(3),
+            draw: () => time.advance(4)
+        });
+
+        updateStack([sparks], scene, 0.016, undefined, profiler);
+        paintStack(context(), [sparks], "draw", scene, undefined, profiler);
+        profiler.endFrame();
+
+        expect(profiler.rows()).toEqual([{ label: "effects.sparks", ms: 7 }]);
+    });
+
+    it("не записывает время выключенного слоя", () => {
+        const time = clock();
+        const profiler = new FrameProfiler(time.now);
+        profiler.setEnabled(true);
+
+        const off = layer("effects.nebula", { enabled: false, draw: () => time.advance(5) });
+
+        paintStack(context(), [off], "draw", scene, undefined, profiler);
+        profiler.endFrame();
+
+        expect(profiler.rows()).toEqual([]);
     });
 });

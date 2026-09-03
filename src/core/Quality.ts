@@ -19,12 +19,34 @@ export interface QualityProfile {
     readonly particles: number;
     /** Украшения, которые видно только вблизи: блики, живая заливка, шлейфы. */
     readonly detail: number;
+    /**
+     * Потолок площади холста в пикселях. Плотность экрана о нагрузке говорит
+     * мало: телевизор на 4K просит 8.3 мегапикселя при `devicePixelRatio`
+     * равном единице, и слабый ускоритель на этом встаёт.
+     */
+    readonly maxPixels: number;
 }
 
 const PROFILES: Readonly<Record<QualityLevel, QualityProfile>> = {
-    high: { renderScale: 1, glowScale: 0.25, bloomPasses: 3, particles: 1, detail: 1 },
-    medium: { renderScale: 0.8, glowScale: 0.2, bloomPasses: 2, particles: 0.6, detail: 0.5 },
-    low: { renderScale: 0.5, glowScale: 0.16, bloomPasses: 1, particles: 0.25, detail: 0 }
+    // Потолок высокой ступени выбран так, чтобы ноутбук с Retina проходил
+    // целиком (1512×982 при плотности 2 — это 5.9 мегапикселя).
+    high: { renderScale: 1, glowScale: 0.25, bloomPasses: 3, particles: 1, detail: 1, maxPixels: 6_200_000 },
+    medium: {
+        renderScale: 0.8,
+        glowScale: 0.2,
+        bloomPasses: 2,
+        particles: 0.6,
+        detail: 0.5,
+        maxPixels: 3_000_000
+    },
+    low: {
+        renderScale: 0.5,
+        glowScale: 0.16,
+        bloomPasses: 1,
+        particles: 0.25,
+        detail: 0,
+        maxPixels: 1_400_000
+    }
 };
 
 const LADDER: readonly QualityLevel[] = ["low", "medium", "high"];
