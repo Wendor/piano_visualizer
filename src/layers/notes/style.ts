@@ -34,7 +34,16 @@ export interface NoteBar {
     readonly openBottom: boolean;
     /** Нота летит вверх (живая игра), а не падает сверху (файл). */
     readonly rising: boolean;
+    /** Постоянная доля 0…1, своя у каждой ноты: по ней живёт её заливка. */
+    readonly seed: number;
 }
+
+/**
+ * Номер ноты → её постоянная доля 0…1. Умножение на золотое сечение разводит
+ * соседние номера далеко друг от друга; остаток от деления выстроил бы их
+ * лесенкой, и подряд идущие ноты выглядели бы почти одинаково.
+ */
+export const seedOf = (index: number): number => (index * 0.618033988749895) % 1;
 
 /**
  * Внешний вид нот — общее состояние сцены, а не свойство одного слоя:
@@ -281,8 +290,13 @@ export class NoteStyle {
         if (!pattern) return;
 
         if (typeof DOMMatrix === "function") {
-            const drift = -this.time * 22;
-            pattern.setTransform(new DOMMatrix().translateSelf(bar.hue % 64, drift % 64));
+            // Каждая нота плывёт по-своему: своя точка в тайле и своя скорость.
+            // Одной фазы мало — облака шли бы парадом, просто из разных мест.
+            const phaseX = bar.seed * 64;
+            // Семёрка расцепляет оси: иначе все ноты сидели бы на одной диагонали.
+            const phaseY = ((bar.seed * 7) % 1) * 64;
+            const drift = -this.time * 22 * (0.7 + bar.seed * 0.6);
+            pattern.setTransform(new DOMMatrix().translateSelf(phaseX, (drift + phaseY) % 64));
         }
 
         g.save();

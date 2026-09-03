@@ -2,7 +2,7 @@ import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
 import { isAccidental } from "../../core/layout";
 import { firstNoteAtOrAfter } from "../../score/types";
-import { NoteStyle, noteStyle } from "./style";
+import { NoteStyle, noteStyle, seedOf } from "./style";
 import type { NoteBar } from "./style";
 
 /**
@@ -60,7 +60,10 @@ export class FallingNotesLayer extends BaseLayer {
                 velocity: Math.min(1, note.velocity / 110),
                 hollow: hollowNaturals && !isAccidental(key.midi),
                 openBottom: rawBottom > layout.top,
-                rising: false
+                rising: false,
+                // Номер ноты в партитуре постоянен: зерно переживает и кадр,
+                // и перемотку, и выключение партии.
+                seed: seedOf(i)
             });
         }
     }

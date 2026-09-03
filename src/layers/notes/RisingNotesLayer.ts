@@ -1,6 +1,6 @@
 import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
-import { NoteStyle, noteStyle } from "./style";
+import { NoteStyle, noteStyle, seedOf } from "./style";
 import type { NoteBar } from "./style";
 
 /**
@@ -60,7 +60,8 @@ export class RisingNotesLayer extends BaseLayer {
                 velocity: Math.min(1, note.velocity / 110),
                 hollow: hollowNaturals && !note.accidental,
                 openBottom: note.end === null,
-                rising: true
+                rising: true,
+                seed: seedOf(note.id)
             });
         }
 
