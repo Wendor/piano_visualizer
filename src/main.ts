@@ -1,4 +1,5 @@
 import { Sampler } from "./audio/Sampler";
+import { parseDebugFlags } from "./core/debugFlags";
 import { Visualizer } from "./core/Visualizer";
 import type { Layer } from "./core/types";
 import { DEFAULT_STACK, registerBuiltinLayers } from "./layers";
@@ -66,6 +67,12 @@ settingsStore.addOwner("notes.direction", () => director.params());
 
 persistence.load();
 persistence.start();
+
+// Флаги из адреса — после загрузки настроек: с пульта их вводят затем,
+// чтобы посмотреть на конкретный случай, а не чтобы поменять сохранённое.
+const debugFlags = parseDebugFlags(window.location.search);
+if (debugFlags.quality) visualizer.quality.setMode(debugFlags.quality);
+if (debugFlags.profile !== undefined) fpsMeter.setProfiling(debugFlags.profile);
 
 const hud = new Hud(hudRoot);
 

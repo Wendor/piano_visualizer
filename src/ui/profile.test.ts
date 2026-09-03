@@ -19,10 +19,15 @@ describe("profileLines", () => {
         expect(profileLines([{ label: "keyboard", ms: 0 }])).toEqual(["keyboard · 0.0 мс · 0%"]);
     });
 
-    it("не растёт бесконечно: показывает только самые дорогие участки", () => {
-        const rows = Array.from({ length: 20 }, (_, i) => ({ label: `layer${i}`, ms: 20 - i }));
+    it("показывает стек слоёв целиком: их дюжина, и дешёвые тоже важны", () => {
+        const rows = Array.from({ length: 12 }, (_, i) => ({ label: `layer${i}`, ms: 12 - i }));
+        expect(profileLines(rows)).toHaveLength(12);
+    });
+
+    it("не растёт бесконечно: длинный хвост обрезается", () => {
+        const rows = Array.from({ length: 40 }, (_, i) => ({ label: `layer${i}`, ms: 40 - i }));
         const lines = profileLines(rows);
-        expect(lines).toHaveLength(8);
+        expect(lines.length).toBeLessThanOrEqual(14);
         expect(lines[0]).toContain("layer0");
     });
 });
