@@ -78,6 +78,15 @@ describe("Quality: потолок площади холста", () => {
         expect(quality.profile.maxPixels).toBeGreaterThanOrEqual(1512 * 2 * 982 * 2);
     });
 
+    it("на низкой ступени холст занимает не больше пятой части площади экрана", () => {
+        const quality = new Quality();
+        quality.setMode("low");
+        // Машина без ускорения холста платит за каждый пиксель, а полноэкранных
+        // проходов у сцены полдюжины: фон, дымка, свечение, затемнение, ноты.
+        // Площадь растёт как квадрат масштаба — она и решает судьбу кадра.
+        expect(quality.profile.renderScale ** 2).toBeLessThanOrEqual(0.2);
+    });
+
     it("на низкой ступени просит меньше пикселей, чем на высокой", () => {
         const quality = new Quality();
         const high = quality.profile.maxPixels;

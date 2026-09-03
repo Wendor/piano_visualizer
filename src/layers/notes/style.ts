@@ -80,6 +80,17 @@ export class NoteStyle {
         return this.quality?.profile.detail ?? 1;
     }
 
+    /**
+     * Заливать тело ноты ровным цветом вместо поперечного градиента.
+     *
+     * Растеризация градиента считает интерполяцию на каждый пиксель. Там, где
+     * холст рисует процессор, это дороже всей остальной ноты вместе взятой —
+     * дороже и скруглённого пути, и канта.
+     */
+    get flatFill(): boolean {
+        return this.detail < 0.5;
+    }
+
     params(): ParamSpec[] {
         const o = this.options;
         return [
@@ -318,19 +329,28 @@ export class NoteStyle {
         return made;
     }
 
-    /** Поперечный градиент тела ноты; ключ огрубляет цвет и ширину. */
-    private body(g: CanvasRenderingContext2D, theme: Theme, bar: NoteBar, filled: boolean): CanvasGradient {
+    /** Заливка тела ноты: градиент или ровный цвет на слабой машине. */
+    private body(
+        g: CanvasRenderingContext2D,
+        theme: Theme,
+        bar: NoteBar,
+        filled: boolean
+    ): CanvasGradient | string {
         const hue = bucket(bar.hue, 2);
         const width = Math.max(2, Math.round(bar.width));
         const velocity = bucket(bar.velocity, 0.1);
         const key = `${theme.palette.id}|${hue}|${width}|${filled ? 1 : 0}|${velocity.toFixed(1)}`;
 
+        const alpha = 0.85 + velocity * 0.15;
+        const coreLightness = filled ? 58 + velocity * 8 : 50;
+        const coreAlpha = filled ? alpha : 0.32 * alpha;
+        // Ровная заливка берёт цвет сердцевины: именно её видно на всей ширине,
+        // а к краям градиент лишь чуть темнеет.
+        if (this.flatFill) return theme.color(hue, coreLightness, coreAlpha);
+
         return this.gradients.get(key, () => {
-            const alpha = 0.85 + velocity * 0.15;
             const edgeLightness = filled ? 44 + velocity * 8 : 42;
-            const coreLightness = filled ? 58 + velocity * 8 : 50;
             const edgeAlpha = filled ? 0.9 * alpha : 0.2 * alpha;
-            const coreAlpha = filled ? alpha : 0.32 * alpha;
 
             const body = g.createLinearGradient(0, 0, width, 0);
             body.addColorStop(0, theme.color(hue, edgeLightness, edgeAlpha));

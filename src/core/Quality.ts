@@ -29,7 +29,9 @@ export interface QualityProfile {
 
 const PROFILES: Readonly<Record<QualityLevel, QualityProfile>> = {
     // Потолок высокой ступени выбран так, чтобы ноутбук с Retina проходил
-    // целиком (1512×982 при плотности 2 — это 5.9 мегапикселя).
+    // целиком (1512×982 при плотности 2 — это 5.9 мегапикселя). Низкая
+    // ступень рассчитана на машину без ускорения холста: там платят за
+    // каждый пиксель, а полноэкранных проходов у сцены полдюжины.
     high: { renderScale: 1, glowScale: 0.25, bloomPasses: 3, particles: 1, detail: 1, maxPixels: 6_200_000 },
     medium: {
         renderScale: 0.8,
@@ -40,12 +42,12 @@ const PROFILES: Readonly<Record<QualityLevel, QualityProfile>> = {
         maxPixels: 3_000_000
     },
     low: {
-        renderScale: 0.5,
+        renderScale: 0.4,
         glowScale: 0.16,
         bloomPasses: 1,
         particles: 0.25,
         detail: 0,
-        maxPixels: 1_400_000
+        maxPixels: 900_000
     }
 };
 
