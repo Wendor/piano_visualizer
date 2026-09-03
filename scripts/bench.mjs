@@ -102,6 +102,23 @@ class Session {
         await this.send("Page.navigate", { url });
     }
 
+    /**
+     * Настоящий щелчок мышью. Без жеста браузер держит звук запертым, а
+     * первое касание — как раз тот случай, ради которого всё и меряется:
+     * тогда грузится и разбирается банк сэмплов.
+     */
+    async gesture() {
+        for (const type of ["mousePressed", "mouseReleased"]) {
+            await this.send("Input.dispatchMouseEvent", {
+                type,
+                x: 20,
+                y: 20,
+                button: "left",
+                clickCount: 1
+            });
+        }
+    }
+
     async screenshot() {
         const { data } = await this.send("Page.captureScreenshot", { format: "png" });
         return data;
@@ -166,6 +183,10 @@ class BidiSession {
         await this.send("browsingContext.navigate", { context: this.context, url, wait: "complete" });
     }
 
+    async gesture() {
+        // BiDi умеет ввод, но для этого замера хватает протокола Chrome.
+    }
+
     async evaluate(expression) {
         const result = await this.send("script.evaluate", {
             expression,
@@ -216,6 +237,16 @@ const PLAY = `
   const s = window.visualizer.scene;
   window.__frames = [];
   window.__last = 0;
+  // Длинные задачи — это и есть блокировки главного потока: разбор банка
+  // сэмплов, сборка мусора, всё, что рвёт ход кадров.
+  window.__long = [];
+  try {
+    window.__obs?.disconnect();
+    window.__obs = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) window.__long.push(Math.round(entry.duration));
+    });
+    window.__obs.observe({ entryTypes: ["longtask"] });
+  } catch {}
   const tick = (t) => {
     if (window.__last) window.__frames.push(t - window.__last);
     window.__last = t;
@@ -243,7 +274,14 @@ JSON.stringify((() => {
   cancelAnimationFrame(window.__raf);
   const f = (window.__frames || []).slice().sort((a, b) => a - b);
   const at = (q) => f.length ? +f[Math.min(f.length - 1, Math.floor(f.length * q))].toFixed(1) : 0;
+  const sampler = window.sampler || {};
   return {
+    sound: {
+      context: sampler.ctx ? sampler.ctx.state : "нет",
+      banks: sampler.banks ? sampler.banks.size : -1
+    },
+    probe: window.__probe || null,
+    long: (window.__long || []).slice().sort((a, b) => b - a).slice(0, 5),
     worst: at(0.99),
     p95: at(0.95),
     stalls: f.filter((ms) => ms > 32).length,
@@ -272,7 +310,10 @@ async function runCase(session, url, spec, seconds) {
     const full = `${url}/?profile=1&${query}`;
     await session.navigate(full);
     await sleep(2500);
+    // Патч раньше жеста: иначе звук успеет проснуться до того, как опыт
+    // что-либо изменит, и мерить будет нечего.
     if (patch) await session.evaluate(`(() => { const v = window.visualizer; ${patch}; return "ok"; })()`);
+    await session.gesture();
     await session.evaluate(PLAY);
     await sleep(seconds * 1000);
     return JSON.parse(await session.evaluate(COLLECT));
@@ -329,6 +370,11 @@ async function main() {
             session = await Session.open(page.webSocketDebuggerUrl);
             await session.send("Page.enable");
             await session.send("Runtime.enable");
+            // Без этого первый сценарий грузит звук по сети, а следующие берут
+            // его из кэша — и разница между опытами оказывается разницей между
+            // холодным и тёплым запуском, а не тем, что мы меряем.
+            await session.send("Network.enable");
+            await session.send("Network.setCacheDisabled", { cacheDisabled: true });
             if (options.cpu > 1) await session.send("Emulation.setCPUThrottlingRate", { rate: options.cpu });
         }
 
@@ -349,6 +395,10 @@ async function main() {
             console.log(
                 `   худший кадр ${result.worst} мс · 95% ниже ${result.p95} мс · рывков ${result.stalls}`
             );
+            console.log(
+                `   звук: ${result.sound.context}, банков ${result.sound.banks} · долгие задачи ${result.long.join(", ") || "нет"}`
+            );
+            if (result.probe) console.log(`   замер: ${JSON.stringify(result.probe)}`);
             for (const [label, ms] of result.rows.slice(0, 6)) console.log(`   ${label.padEnd(20)} ${ms} мс`);
             if (options.shot) await shoot(session, options.shot.replace("%", String(results.length)));
         }
