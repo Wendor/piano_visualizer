@@ -78,6 +78,10 @@ export class MidiInput implements InputSource {
 
     private bind(): void {
         if (!this.access) return;
+        // Отключённое устройство из списка уже пропало — снимаем обработчик
+        // со всех прежних портов, иначе он останется висеть на исчезнувшем.
+        for (const port of this.ports) port.onmidimessage = null;
+
         const names: string[] = [];
         const ports: MidiPort[] = [];
 

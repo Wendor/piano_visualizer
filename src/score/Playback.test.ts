@@ -8,10 +8,13 @@ import { makeScore } from "./types";
 class Sink implements NoteSink {
     readonly calls: string[] = [];
     readonly held = new Set<number>();
+    /** Возраст каждой сыгранной ноты внутри кадра — его ждёт звук. */
+    readonly ons: Array<{ midi: number; age: number | undefined }> = [];
     sustain = false;
 
-    noteOn(midi: number, velocity: number): void {
+    noteOn(midi: number, velocity: number, options?: { part?: number; age?: number }): void {
         this.calls.push(`on:${midi}:${velocity}`);
+        this.ons.push({ midi, age: options?.age });
         this.held.add(midi);
     }
     noteOff(midi: number): void {
@@ -189,6 +192,49 @@ suite("Playback", () => {
         const playback = new Playback();
         expect(() => playback.advance(1, sink)).not.toThrow();
         expect(sink.calls).toEqual([]);
+    });
+});
+
+suite("возраст ноты внутри кадра", () => {
+    const score = makeScore(
+        "ages.mid",
+        [
+            { midi: 60, velocity: 90, start: 0.02, end: 1, part: 0 },
+            { midi: 64, velocity: 90, start: 0.1, end: 1, part: 0 }
+        ],
+        [],
+        [{ index: 0, track: 0, channel: 0, name: "Рояль", program: 0 }]
+    );
+
+    function playing(): { playback: Playback; sink: Sink } {
+        const sink = new Sink();
+        const playback = new Playback();
+        playback.load(score, sink);
+        playback.transport.play();
+        sink.ons.length = 0;
+        return { playback, sink };
+    }
+
+    it("нота из середины кадра старше ноты с его конца ровно на разницу их начал", () => {
+        const { playback, sink } = playing();
+        playback.advance(0.1, sink);
+
+        const early = sink.ons.find((on) => on.midi === 60)!;
+        const late = sink.ons.find((on) => on.midi === 64)!;
+        expect(early.age! - late.age!).toBeCloseTo(0.08, 10);
+    });
+
+    it("нота ровно на конце кадра не имеет возраста", () => {
+        const { playback, sink } = playing();
+        playback.advance(0.1, sink);
+        expect(sink.ons.find((on) => on.midi === 64)!.age).toBeCloseTo(0, 10);
+    });
+
+    it("после перемотки уже звучащая нота приходит со своим возрастом", () => {
+        const { playback, sink } = playing();
+        sink.ons.length = 0;
+        playback.seek(0.5, sink);
+        expect(sink.ons.find((on) => on.midi === 60)!.age).toBeCloseTo(0.48, 10);
     });
 });
 

@@ -3,6 +3,7 @@ import type { Score } from "../score/types";
 import type { ParamSpec } from "../settings/types";
 import { percent } from "../settings/types";
 import { banksNeeded, sustains, TIMBRES, WAVETABLE_CDN, WAVETABLE_LOCAL } from "./instruments";
+import { startAt } from "./scheduling";
 import { decodeWavetable, parseWavetable, zoneFor } from "./wavetable";
 import type { Voiceable } from "./wavetable";
 
@@ -28,6 +29,8 @@ interface Voice {
     midi: number;
     /** Время начала — по нему выбираем, кого снять при переполнении. */
     at: number;
+    /** На сколько нота была сдвинута вперёд: отпускать её нужно так же. */
+    delay: number;
 }
 
 /** Больше одновременных голосов слабая машина не потянет, а слух не заметит. */
@@ -139,7 +142,7 @@ export class Sampler {
         if (this.options.enabled) void this.prepare();
     }
 
-    noteOn(midi: number, velocity: number, part = -1): void {
+    noteOn(midi: number, velocity: number, part = -1, age: number | null = null): void {
         const ctx = this.ctx;
         const master = this.master;
         if (!this.options.enabled || !ctx || !master) return;
@@ -154,6 +157,8 @@ export class Sampler {
         if (this.voices.length >= MAX_VOICES) this.retire();
 
         const now = ctx.currentTime;
+        // Нота файла возвращается в свой музыкальный момент, живая звучит сразу.
+        const when = startAt(now, age);
         const source = ctx.createBufferSource();
         source.buffer = zone.buffer;
         source.playbackRate.value = Math.pow(2, (100 * midi - zone.detune) / 1200);
@@ -166,15 +171,15 @@ export class Sampler {
         const gain = ctx.createGain();
         // Громкость по velocity: на слух отклик ближе к квадрату, чем к прямой.
         const level = Math.pow(clamp(velocity, 1, 127) / 127, 1.6);
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(level, now + ATTACK);
+        gain.gain.setValueAtTime(0, when);
+        gain.gain.linearRampToValueAtTime(level, when + ATTACK);
 
         source.connect(gain);
         gain.connect(master);
         if (this.wet) gain.connect(this.wet);
-        source.start(now);
+        source.start(when);
 
-        const voice: Voice = { source, gain, midi, at: now };
+        const voice: Voice = { source, gain, midi, at: when, delay: when - now };
         source.onended = () => {
             const index = this.voices.indexOf(voice);
             if (index >= 0) this.voices.splice(index, 1);
@@ -346,7 +351,9 @@ export class Sampler {
         const index = this.voices.indexOf(voice);
         if (index >= 0) this.voices.splice(index, 1);
 
-        const now = ctx.currentTime;
+        // Отпускаем ровно с тем же смещением, с каким начали, — иначе поедет
+        // длительность ноты.
+        const now = ctx.currentTime + voice.delay;
         try {
             voice.gain.gain.cancelScheduledValues(now);
             voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);

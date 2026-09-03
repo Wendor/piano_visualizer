@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paintStack } from "./paint";
+import { paintStack, updateStack } from "./paint";
 import type { Scene } from "./Scene";
 import type { Layer } from "./types";
 
@@ -71,5 +71,64 @@ describe("обход слоёв", () => {
     it("слой без нужного метода пропускается", () => {
         const quiet = layer("quiet", {});
         expect(() => paintStack(context(), [quiet], "draw", scene)).not.toThrow();
+    });
+});
+
+describe("сбойный слой", () => {
+    const broken = (id: string, where: "draw" | "update") =>
+        layer(id, {
+            [where]: () => {
+                throw new Error("слой сломался");
+            }
+        });
+
+    it("выключается и не мешает следующему рисовать", () => {
+        const drawn: string[] = [];
+        const bad = broken("bad", "draw");
+        const next = layer("next", { draw: () => drawn.push("next") });
+
+        paintStack(context(), [bad, next], "draw", scene);
+
+        expect(bad.enabled).toBe(false);
+        expect(drawn).toEqual(["next"]);
+    });
+
+    it("сообщает о себе один раз: со второго кадра его уже не зовут", () => {
+        const faults: string[] = [];
+        const bad = broken("bad", "draw");
+        const report = (item: { id: string }) => faults.push(item.id);
+
+        const g = context();
+        paintStack(g, [bad], "draw", scene, report);
+        paintStack(g, [bad], "draw", scene, report);
+
+        expect(faults).toEqual(["bad"]);
+    });
+
+    it("та же защита на обновлении состояния", () => {
+        const updated: string[] = [];
+        const bad = broken("bad", "update");
+        const next = layer("next", { update: () => updated.push("next") });
+
+        updateStack([bad, next], scene, 0.016);
+
+        expect(bad.enabled).toBe(false);
+        expect(updated).toEqual(["next"]);
+    });
+
+    it("без обработчика ошибка не уходит наружу", () => {
+        expect(() => paintStack(context(), [broken("bad", "draw")], "draw", scene)).not.toThrow();
+        expect(() => updateStack([broken("bad", "update")], scene, 0.016)).not.toThrow();
+    });
+
+    it("исправный слой продолжает обновляться", () => {
+        const updated: string[] = [];
+        const good = layer("good", { update: () => updated.push("good") });
+
+        updateStack([good], scene, 0.016);
+        updateStack([good], scene, 0.016);
+
+        expect(good.enabled).toBe(true);
+        expect(updated).toEqual(["good", "good"]);
     });
 });

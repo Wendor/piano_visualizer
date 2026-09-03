@@ -17,7 +17,11 @@ interface Sounding {
 
 /** Куда плеер отдаёт ноты. Сцена подходит как есть. */
 export interface NoteSink {
-    noteOn(midi: number, velocity: number, options?: { performance?: boolean; part?: number }): void;
+    noteOn(
+        midi: number,
+        velocity: number,
+        options?: { performance?: boolean; part?: number; age?: number }
+    ): void;
     noteOff(midi: number, force?: boolean): void;
     setSustain(on: boolean): void;
     panic(): void;
@@ -121,7 +125,9 @@ export class Playback {
             const note = score.notes[this.nextNote]!;
             this.nextNote++;
             if (this.muted.has(note.part)) continue;
-            sink.noteOn(note.midi, note.velocity, { part: note.part });
+            // Возраст ноты внутри кадра нужен звуку: по нему он вернёт её в
+            // свой музыкальный момент, вместо того чтобы дрожать вместе с кадром.
+            sink.noteOn(note.midi, note.velocity, { part: note.part, age: span.to - note.start });
             // Нота, целиком уместившаяся в кадр, гасится не раньше следующего.
             this.sounding.push({ midi: note.midi, until: Math.max(note.end, span.to + MIN_SOUND) });
         }
@@ -159,7 +165,7 @@ export class Playback {
             const note = score.notes[i]!;
             if (note.start < from) break;
             if (note.end <= time || this.muted.has(note.part)) continue;
-            sink.noteOn(note.midi, note.velocity, { part: note.part });
+            sink.noteOn(note.midi, note.velocity, { part: note.part, age: time - note.start });
             this.sounding.push({ midi: note.midi, until: note.end });
         }
     }

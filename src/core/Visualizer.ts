@@ -1,9 +1,10 @@
 import { GlowBuffer } from "./GlowBuffer";
-import { paintStack } from "./paint";
+import { paintStack, updateStack } from "./paint";
 import { Quality } from "./Quality";
 import { layerRegistry, inputRegistry } from "./registry";
 import { coalesce } from "./schedule";
 import { Scene } from "./Scene";
+import type { LayerFault } from "./paint";
 import type { Layer, Viewport } from "./types";
 import type { InputSource } from "../input/types";
 
@@ -36,6 +37,7 @@ export class Visualizer {
     private lastTime = 0;
     private running = false;
     private readonly layerHooks = new Set<LayerHook>();
+    private readonly faultHooks = new Set<LayerFault>();
     // Событий resize приходит поток, а перестройка холста и кэшей дорогая:
     // на кадр хватает одной.
     private readonly onResize = coalesce(() => this.resize());
@@ -68,6 +70,15 @@ export class Visualizer {
     onLayerChange(hook: LayerHook): () => void {
         this.layerHooks.add(hook);
         return () => this.layerHooks.delete(hook);
+    }
+
+    /**
+     * Уведомление о сбойном слое: он уже выключен, сцена жива. Подписчик
+     * решает, показывать ли это человеку.
+     */
+    onLayerFault(hook: LayerFault): () => void {
+        this.faultHooks.add(hook);
+        return () => this.faultHooks.delete(hook);
     }
 
     addLayers(list: readonly Layer[]): this {
@@ -178,6 +189,10 @@ export class Visualizer {
         for (const layer of this.layerList) layer.resize?.(this.scene);
     }
 
+    private readonly onFault: LayerFault = (layer, error) => {
+        for (const hook of this.faultHooks) hook(layer, error);
+    };
+
     private readonly tick = (now: number): void => {
         const frameMs = now - this.lastTime;
         const dt = Math.min(0.05, frameMs / 1000);
@@ -194,15 +209,15 @@ export class Visualizer {
     render(dt: number): void {
         const { scene, ctx } = this;
 
-        for (const layer of this.layerList) if (layer.enabled) layer.update?.(scene, dt);
+        updateStack(this.layerList, scene, dt, this.onFault);
 
         const glowCtx = this.glow.begin(scene.viewport);
-        paintStack(glowCtx, this.layerList, "drawGlow", scene);
+        paintStack(glowCtx, this.layerList, "drawGlow", scene, this.onFault);
 
         ctx.setTransform(scene.viewport.dpr, 0, 0, scene.viewport.dpr, 0, 0);
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
         ctx.filter = "none";
-        paintStack(ctx, this.layerList, "draw", scene);
+        paintStack(ctx, this.layerList, "draw", scene, this.onFault);
     }
 }

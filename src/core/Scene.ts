@@ -10,6 +10,9 @@ export interface NoteOptions {
     performance?: boolean;
     /** Индекс партии партитуры; -1 — живая игра. */
     part?: number;
+    /** Сколько ноте уже «должно быть» на момент кадра, секунды. Звук вернёт
+     *  её на столько же назад; у живой игры возраста нет. */
+    age?: number;
 }
 
 /** Сыгранная нота: чистое музыкальное событие, без геометрии. */
@@ -33,7 +36,7 @@ export interface ActiveNote {
 }
 
 export interface SceneEvents extends Record<string, unknown> {
-    noteon: { midi: number; velocity: number; time: number; part: number };
+    noteon: { midi: number; velocity: number; time: number; part: number; age: number | null };
     noteoff: { midi: number; time: number };
     sustain: { on: boolean };
     layout: { layout: KeyboardLayout };
@@ -115,7 +118,13 @@ export class Scene {
             this.performed++;
             this.events.emit("performance", { midi: target });
         }
-        this.events.emit("noteon", { midi: target, velocity, time: this.time, part: options.part ?? -1 });
+        this.events.emit("noteon", {
+            midi: target,
+            velocity,
+            time: this.time,
+            part: options.part ?? -1,
+            age: options.age ?? null
+        });
     }
 
     noteOff(midi: number, force = false): void {

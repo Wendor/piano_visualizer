@@ -69,10 +69,17 @@ persistence.start();
 
 const hud = new Hud(hudRoot);
 
+// Ошибка внутри эффекта гасит только его, а не всю сцену.
+visualizer.onLayerFault((layer, error) => {
+    const reason = error instanceof Error ? error.message : String(error);
+    hud.flash(`Слой «${layer.title ?? layer.id}» отключён: ${reason}`, 4);
+    console.error(`Слой ${layer.id} отключён`, error);
+});
+
 // Звук идёт от сцены, а не от источника ввода: так звучат и живая игра,
 // и файл, а педаль уже разобрана сценой — она держит ноту сама.
 sampler.onStatus = (text) => hud.flash(text, 1.6);
-scene.events.on("noteon", ({ midi, velocity, part }) => sampler.noteOn(midi, velocity, part));
+scene.events.on("noteon", ({ midi, velocity, part, age }) => sampler.noteOn(midi, velocity, part, age));
 scene.events.on("noteoff", ({ midi }) => sampler.noteOff(midi));
 scene.playback.events.on("score", ({ score }) => sampler.useScore(score));
 
