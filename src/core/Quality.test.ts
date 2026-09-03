@@ -96,3 +96,39 @@ describe("Quality: потолок площади холста", () => {
         expect(quality.profile.maxPixels).toBeLessThan(3840 * 2160 * 0.3);
     });
 });
+
+describe("Quality: рваный ход", () => {
+    /** Экран на 120 Гц, который сцена не держит: два коротких кадра и рывок. */
+    function jerky(quality: Quality, seconds: number): void {
+        const pattern = [8.3, 8.3, 30];
+        let elapsed = 0;
+        let i = 0;
+        while (elapsed < seconds * 1000) {
+            const frameMs = pattern[i++ % pattern.length]!;
+            // Холст рисует не сразу: работа JavaScript выглядит скромно даже
+            // тогда, когда кадр на экране не успевает.
+            quality.sample(4, frameMs, frameMs / 1000);
+            elapsed += frameMs;
+        }
+    }
+
+    it("опускает ступень, когда ход рваный, хотя кадров много", () => {
+        const quality = new Quality();
+        jerky(quality, 6);
+        expect(quality.fps).toBeGreaterThan(60);
+        expect(quality.level).not.toBe("high");
+    });
+
+    it("не поднимает ступень обратно, пока ход рваный", () => {
+        const quality = new Quality();
+        quality.setMode("auto");
+        jerky(quality, 20);
+        expect(quality.level).toBe("low");
+    });
+
+    it("ровный быстрый ход ступень не роняет", () => {
+        const quality = new Quality();
+        for (let i = 0; i < 1000; i++) quality.sample(4, 8.3, 0.0083);
+        expect(quality.level).toBe("high");
+    });
+});

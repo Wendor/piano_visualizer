@@ -73,7 +73,14 @@ export class FpsMeter {
 
     private update(): void {
         const { quality, profiler, canvas } = this.visualizer;
+        const { smoothness } = quality;
         const lines = [`${Math.round(quality.fps)} к/с · ${quality.work.toFixed(1)} мс · ${quality.title}`];
+
+        // Кадров в секунду мало для суждения: при рваном ходе их бывает даже
+        // больше обычного, а картинка дёргается. Рывки об этом и говорят.
+        if (smoothness.stalls > 0) {
+            lines.push(`рывков ${smoothness.stalls} · худший ${smoothness.worst.toFixed(0)} мс`);
+        }
 
         if (profiler.active) {
             // Размер холста — первое, что стоит увидеть на большом экране:

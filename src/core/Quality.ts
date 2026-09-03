@@ -1,4 +1,5 @@
 import { Emitter } from "./Emitter";
+import { Smoothness } from "./Smoothness";
 import type { ParamSpec } from "../settings/types";
 
 export type QualityLevel = "high" | "medium" | "low";
@@ -74,6 +75,14 @@ const SLOW_WORK_MS = 11;
 const FAST_WORK_MS = 5;
 const SLOW_FRAME_MS = 26;
 const FAST_FRAME_MS = 20;
+/**
+ * Доля сбившихся кадров, за которой ход считается рваным. Средний промежуток
+ * о плавности молчит: телефон при касании поднимает экран до 120 Гц, кадров
+ * становится больше, а идут они рвано — и картинка дёргается при формально
+ * прекрасном счёте.
+ */
+const SLOW_JITTER = 0.12;
+const FAST_JITTER = 0.04;
 /** Сколько секунд подряд держится оценка, прежде чем ступень сдвинется. */
 const DROP_AFTER = 1.5;
 const RAISE_AFTER = 6;
@@ -94,6 +103,8 @@ export class Quality {
     private workMs = 6;
     /** Экспоненциальное среднее промежутка между кадрами, мс. */
     private frameMs = 16.7;
+    /** Плавность хода: её же показывает счётчик. */
+    readonly smoothness = new Smoothness();
     private slowFor = 0;
     private fastFor = 0;
     private cooldown = 0;
@@ -142,6 +153,7 @@ export class Quality {
      * ронять качество.
      */
     sample(workMs: number, frameMs: number, dt: number): void {
+        this.smoothness.sample(frameMs);
         // Промежутки длиннее 200 мс — это не «медленно», это вкладка была в фоне.
         if (frameMs < 200) this.frameMs += (frameMs - this.frameMs) * 0.08;
         if (workMs < 200) this.workMs += (workMs - this.workMs) * 0.08;
@@ -152,8 +164,9 @@ export class Quality {
             return;
         }
 
-        const slow = this.workMs > SLOW_WORK_MS || this.frameMs > SLOW_FRAME_MS;
-        const fast = this.workMs < FAST_WORK_MS && this.frameMs < FAST_FRAME_MS;
+        const jitter = this.smoothness.jitter;
+        const slow = this.workMs > SLOW_WORK_MS || this.frameMs > SLOW_FRAME_MS || jitter > SLOW_JITTER;
+        const fast = this.workMs < FAST_WORK_MS && this.frameMs < FAST_FRAME_MS && jitter < FAST_JITTER;
         this.slowFor = slow ? this.slowFor + dt : 0;
         this.fastFor = fast ? this.fastFor + dt : 0;
 
@@ -195,6 +208,7 @@ export class Quality {
         // Оценку сбрасываем: старое среднее относится к другой картинке.
         this.workMs = 6;
         this.frameMs = 16.7;
+        this.smoothness.reset();
         this.events.emit("change", { level, profile: this.profile });
     }
 }
