@@ -1,4 +1,5 @@
 import { clamp } from "../core/math";
+import { fillImpulse } from "./impulse";
 import type { Score } from "../score/types";
 import type { ParamSpec } from "../settings/types";
 import { percent } from "../settings/types";
@@ -298,13 +299,7 @@ export class Sampler {
         const seconds = 1.6;
         const length = Math.floor(ctx.sampleRate * seconds);
         const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
-        for (let channel = 0; channel < 2; channel++) {
-            const data = impulse.getChannelData(channel);
-            for (let i = 0; i < length; i++) {
-                const decay = Math.pow(1 - i / length, 2.6);
-                data[i] = (Math.random() * 2 - 1) * decay;
-            }
-        }
+        fillImpulse(impulse.getChannelData(0), impulse.getChannelData(1));
 
         const convolver = ctx.createConvolver();
         convolver.buffer = impulse;
