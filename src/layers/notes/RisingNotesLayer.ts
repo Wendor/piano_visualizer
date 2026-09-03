@@ -36,6 +36,7 @@ export class RisingNotesLayer extends BaseLayer {
     override update(scene: Scene, _dt: number): void {
         const { layout, theme, time } = scene;
         const { speed, gap, hollowNaturals } = this.style.options;
+        this.style.time = time;
         const bars: NoteBar[] = [];
 
         for (const note of scene.notes) {
@@ -58,7 +59,8 @@ export class RisingNotesLayer extends BaseLayer {
                 hue: theme.hueFor(note.midi, layout),
                 velocity: Math.min(1, note.velocity / 110),
                 hollow: hollowNaturals && !note.accidental,
-                openBottom: note.end === null
+                openBottom: note.end === null,
+                rising: true
             });
         }
 

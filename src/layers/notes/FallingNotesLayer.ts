@@ -30,6 +30,7 @@ export class FallingNotesLayer extends BaseLayer {
 
         const { speed, gap, hollowNaturals } = this.style.options;
         const now = playback.time;
+        this.style.time = scene.time;
         // Сколько секунд партитуры помещается над клавиатурой.
         const lookahead = (layout.top + 60) / speed;
         const last = firstNoteAtOrAfter(score.notes, now + lookahead);
@@ -58,7 +59,8 @@ export class FallingNotesLayer extends BaseLayer {
                 hue: theme.hueFor(key.midi, layout),
                 velocity: Math.min(1, note.velocity / 110),
                 hollow: hollowNaturals && !isAccidental(key.midi),
-                openBottom: rawBottom > layout.top
+                openBottom: rawBottom > layout.top,
+                rising: false
             });
         }
     }

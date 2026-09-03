@@ -1,6 +1,7 @@
 import { BaseLayer, Stage } from "../../core/types";
 import type { ParamSpec } from "../../settings/types";
 import type { Scene } from "../../core/Scene";
+import { GradientCache, bucket } from "../../core/gradients";
 
 export interface KeyLightOptions {
     /** Скорость затухания вспышки удара, 1/сек. */
@@ -17,6 +18,7 @@ export class KeyLightLayer extends BaseLayer {
     readonly options: KeyLightOptions;
 
     private readonly flash = new Map<number, number>();
+    private readonly gradients = new GradientCache(256);
     private detach: (() => void) | null = null;
 
     constructor(options: Partial<KeyLightOptions> = {}) {
@@ -90,14 +92,23 @@ export class KeyLightLayer extends BaseLayer {
             const hue = theme.hueFor(key.midi, layout);
             const spread = key.width * (this.options.spread + flash * 2.6);
             const height = 34 + flash * 120;
-            const cx = key.x + key.width / 2;
+            // Ореол строится от центра клавиши: тогда радиус можно огрубить
+            // и брать готовый градиент из кэша, а яркость отдать globalAlpha.
+            const radius = Math.max(16, bucket(Math.max(spread, height), 16));
 
-            const gradient = g.createRadialGradient(cx, layout.top, 0, cx, layout.top, Math.max(spread, height));
-            gradient.addColorStop(0, theme.color(hue, 60, 0.7 * intensity));
-            gradient.addColorStop(0.42, theme.color(hue, 52, 0.34 * intensity));
-            gradient.addColorStop(1, theme.color(hue, 50, 0));
-            g.fillStyle = gradient;
-            g.fillRect(cx - spread, layout.top - height, spread * 2, height + 10);
+            g.save();
+            g.translate(key.x + key.width / 2, layout.top);
+            g.globalAlpha = intensity;
+            g.fillStyle = this.gradients.get(`${theme.palette.id}|${bucket(hue, 4)}|${radius}`, () => {
+                const gradient = g.createRadialGradient(0, 0, 0, 0, 0, radius);
+                gradient.addColorStop(0, theme.color(hue, 60, 0.7));
+                gradient.addColorStop(0.42, theme.color(hue, 52, 0.34));
+                gradient.addColorStop(1, theme.color(hue, 50, 0));
+                return gradient;
+            });
+            g.fillRect(-spread, -height, spread * 2, height + 10);
+            g.restore();
         }
+        g.globalAlpha = 1;
     }
 }

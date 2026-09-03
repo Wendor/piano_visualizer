@@ -16,6 +16,15 @@ export class GlowBuffer {
         this.ctx = ctx;
     }
 
+    /** Доля экрана, в которой живёт буфер. Меняется вместе с качеством. */
+    get scaleFactor(): number {
+        return this.scale;
+    }
+
+    setScale(scale: number): void {
+        this.scale = scale;
+    }
+
     resize(viewport: Viewport): void {
         this.canvas.width = Math.max(1, Math.round(viewport.width * this.scale));
         this.canvas.height = Math.max(1, Math.round(viewport.height * this.scale));

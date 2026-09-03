@@ -1,4 +1,5 @@
 import { GlowBuffer } from "./GlowBuffer";
+import { Quality } from "./Quality";
 import { layerRegistry, inputRegistry } from "./registry";
 import { Scene } from "./Scene";
 import type { Layer, Viewport } from "./types";
@@ -23,6 +24,8 @@ export class Visualizer {
     readonly canvas: HTMLCanvasElement;
     readonly ctx: CanvasRenderingContext2D;
     readonly glow: GlowBuffer;
+    /** Ступень качества: она же решает, в каком разрешении рисовать. */
+    readonly quality = new Quality();
 
     private readonly layerList: Layer[] = [];
     private readonly inputList: InputSource[] = [];
@@ -39,7 +42,8 @@ export class Visualizer {
         if (!ctx) throw new Error("2D-контекст недоступен");
         this.ctx = ctx;
         this.maxDpr = options.maxDpr ?? 2;
-        this.glow = new GlowBuffer(options.glowScale ?? 0.25);
+        this.glow = new GlowBuffer(options.glowScale ?? this.quality.profile.glowScale);
+        this.quality.events.on("change", () => this.resize());
     }
 
     // --- слои ---------------------------------------------------------------
@@ -152,8 +156,12 @@ export class Visualizer {
     }
 
     resize(): void {
-        const dpr = Math.min(window.devicePixelRatio || 1, this.maxDpr);
+        const { renderScale, glowScale } = this.quality.profile;
+        // Холст меньше экрана, а CSS-размер прежний: браузер растянет картинку
+        // при выводе — это самый дешёвый способ вернуть кадр в бюджет.
+        const dpr = Math.min(window.devicePixelRatio || 1, this.maxDpr) * renderScale;
         const viewport: Viewport = { width: window.innerWidth, height: window.innerHeight, dpr };
+        this.glow.setScale(glowScale);
 
         this.canvas.width = Math.round(viewport.width * dpr);
         this.canvas.height = Math.round(viewport.height * dpr);
@@ -167,10 +175,14 @@ export class Visualizer {
     }
 
     private readonly tick = (now: number): void => {
-        const dt = Math.min(0.05, (now - this.lastTime) / 1000);
+        const frameMs = now - this.lastTime;
+        const dt = Math.min(0.05, frameMs / 1000);
         this.lastTime = now;
+
+        const started = performance.now();
         this.scene.advance(dt);
         this.render(dt);
+        this.quality.sample(performance.now() - started, frameMs, dt);
         if (this.running) this.frame = requestAnimationFrame(this.tick);
     };
 

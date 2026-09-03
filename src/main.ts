@@ -13,6 +13,7 @@ import type { ParamGroup } from "./settings/types";
 import { Controls } from "./ui/Controls";
 import { FileDrop } from "./ui/FileDrop";
 import { Hud } from "./ui/Hud";
+import { FpsMeter } from "./ui/FpsMeter";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TransportBar } from "./ui/TransportBar";
 import { notesWord } from "./ui/text";
@@ -38,8 +39,14 @@ function groupOf(layer: Layer): ParamGroup {
 
 const settingsStore = new SettingsStore();
 const persistence = new SettingsPersistence(settingsStore);
+const fpsMeter = new FpsMeter(visualizer.quality);
+
+// Порядок владельцев задаёт порядок строк внутри группы: качество должно
+// стоять раньше «Сбросить всё», иначе оно окажется в хвосте панели.
+settingsStore.addOwner("quality", () => [...visualizer.quality.params(), ...fpsMeter.params()]);
 registerGlobalParams(settingsStore, visualizer, persistence);
 settingsStore.addOwner("notes.style", () => noteStyle.params());
+noteStyle.useQuality(visualizer.quality);
 
 // Подписка до сборки стека: слои сами приносят свои параметры, в том числе те,
 // что добавлены уже после старта.

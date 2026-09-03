@@ -56,6 +56,12 @@ export class Scene {
     inputLocked = false;
     /** Сколько нот сыграно живым вводом (не автодемо). */
     performed = 0;
+    /**
+     * Насыщенность момента, 0…1: растёт от ударов, держится, пока клавиши
+     * зажаты, и медленно гаснет в тишине. Фоновые эффекты дышат по ней,
+     * поэтому считать её каждому слою отдельно незачем.
+     */
+    energy = 0;
 
     private nextId = 1;
     private retentionRequests = new Map<string, number>();
@@ -93,6 +99,8 @@ export class Scene {
             start: this.time,
             end: null
         });
+
+        this.energy = Math.min(1, this.energy + 0.1 + (velocity / 127) * 0.16);
 
         if (options.performance) {
             this.performed++;
@@ -148,6 +156,11 @@ export class Scene {
     advance(dt: number): void {
         this.time += dt;
         this.playback.advance(dt, this);
+
+        const decay = this.energy * dt * 1.4;
+        // Пока клавиши зажаты, энергия не падает ниже уровня «звучит аккорд».
+        const floor = Math.min(0.55, this.active.size * 0.09);
+        this.energy = Math.max(floor, this.energy - decay);
         const cutoff = this.time - this.retention;
         let alive = 0;
         for (const note of this.notes) if (note.end === null || note.end > cutoff) alive++;

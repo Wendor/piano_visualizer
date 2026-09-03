@@ -1,6 +1,7 @@
 import { BaseLayer, Stage } from "../../core/types";
 import type { ParamSpec } from "../../settings/types";
 import type { Scene } from "../../core/Scene";
+import type { Quality } from "../../core/Quality";
 
 export interface SparksOptions {
     /** Базовое число искр; к нему добавляется вклад velocity. */
@@ -31,7 +32,10 @@ export class SparksLayer extends BaseLayer {
     private readonly sparks: Spark[] = [];
     private detach: (() => void) | null = null;
 
-    constructor(options: Partial<SparksOptions> = {}) {
+    constructor(
+        private readonly quality: Quality | null = null,
+        options: Partial<SparksOptions> = {}
+    ) {
         super();
         this.options = { count: 7, velocityCount: 13, gravity: 430, drag: 1.9, ...options };
     }
@@ -84,7 +88,9 @@ export class SparksLayer extends BaseLayer {
 
         const hue = scene.theme.hueFor(midi, scene.layout);
         const cx = key.x + key.width / 2;
-        const total = Math.round(this.options.count + (velocity / 127) * this.options.velocityCount);
+        const density = this.quality?.profile.particles ?? 1;
+        const full = this.options.count + (velocity / 127) * this.options.velocityCount;
+        const total = Math.round(full * density);
 
         for (let i = 0; i < total; i++) {
             const aim = Math.random() - 0.5;
