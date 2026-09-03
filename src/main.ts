@@ -11,6 +11,7 @@ import { parseMidiFile } from "./score/smf";
 import { SettingsStore } from "./settings/SettingsStore";
 import { SettingsPersistence } from "./settings/persistence";
 import { registerGlobalParams } from "./settings/globalParams";
+import { applyOverrides } from "./settings/overrides";
 import type { ParamGroup } from "./settings/types";
 import { Controls } from "./ui/Controls";
 import { FileDrop } from "./ui/FileDrop";
@@ -79,7 +80,16 @@ const hud = new Hud(hudRoot);
 // Выключение слоёв из адреса — здесь, а не выше: об опечатке в имени надо
 // сказать, иначе человек решит, что слой ничего не стоит, а он просто работал.
 const unknownLayers = (debugFlags.off ?? []).filter((id) => !visualizer.toggleLayer(id, false));
-if (unknownLayers.length > 0) hud.flash(`Нет таких слоёв: ${unknownLayers.join(", ")}`, 4);
+const rejectedSettings = applyOverrides(settingsStore, debugFlags.set ?? []);
+const complaints = [...unknownLayers, ...rejectedSettings];
+if (complaints.length > 0) {
+    const complaint = `Не понял: ${complaints.join(", ")}`;
+    console.warn(complaint);
+    // Статус MIDI приходит асинхронно и ляжет поверх: жалобу показываем после
+    // него. Молча проглотить опечатку нельзя — иначе выключённым сочтут то,
+    // что всё это время работало, и замер соврёт.
+    window.setTimeout(() => hud.flash(complaint, 5), 1200);
+}
 
 // Ошибка внутри эффекта гасит только его, а не всю сцену.
 visualizer.onLayerFault((layer, error) => {

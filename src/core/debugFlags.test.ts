@@ -53,4 +53,27 @@ describe("parseDebugFlags", () => {
     it("пустой список слоёв — это не список", () => {
         expect(parseDebugFlags("?off=")).toEqual({});
     });
+
+    it("читает подмену настройки", () => {
+        expect(parseDebugFlags("?set=notes.style/roundness=0")).toEqual({
+            set: [["notes.style/roundness", "0"]]
+        });
+    });
+
+    it("читает несколько подмен через запятую", () => {
+        expect(parseDebugFlags("?set=notes.style/roundness=0,effects.bloom/strength=0.5")).toEqual({
+            set: [
+                ["notes.style/roundness", "0"],
+                ["effects.bloom/strength", "0.5"]
+            ]
+        });
+    });
+
+    it("пропускает подмену без значения", () => {
+        expect(parseDebugFlags("?set=notes.style/roundness")).toEqual({});
+    });
+
+    it("пустая подмена — это не подмена", () => {
+        expect(parseDebugFlags("?set=")).toEqual({});
+    });
 });

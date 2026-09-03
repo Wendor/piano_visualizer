@@ -13,6 +13,12 @@ export interface DebugFlags {
      * выключить его и посмотреть на кадры.
      */
     off?: string[];
+    /**
+     * Подмена настроек: пары «идентификатор — значение как написано».
+     * Значение остаётся строкой: какого оно типа, знает только описание
+     * параметра, а оно живёт в реестре настроек.
+     */
+    set?: Array<[string, string]>;
 }
 
 const MODES: readonly QualityMode[] = ["auto", "high", "medium", "low"];
@@ -41,6 +47,14 @@ export function parseDebugFlags(search: string): DebugFlags {
         .map((id) => id.trim())
         .filter((id) => id.length > 0);
     if (off.length > 0) flags.off = off;
+
+    const overrides = (query.get("set") ?? "")
+        .split(",")
+        .map((pair) => pair.split("="))
+        .filter((parts): parts is [string, string] => parts.length === 2)
+        .map(([id, value]) => [id.trim(), value.trim()] as [string, string])
+        .filter(([id, value]) => id.length > 0 && value.length > 0);
+    if (overrides.length > 0) flags.set = overrides;
 
     return flags;
 }
