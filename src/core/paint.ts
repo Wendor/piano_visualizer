@@ -1,7 +1,7 @@
 import type { FrameProfiler } from "./FrameProfiler";
 import type { Scene } from "./Scene";
 import type { Layer } from "./types";
-import type { Ctx2D } from "./surface";
+import type { Painter } from "../paint/Painter";
 
 /** Куда слой рисует: в основной холст или в буфер свечения. */
 export type Brush = "draw" | "drawGlow";
@@ -20,12 +20,12 @@ export function wantsGlow(layers: readonly Layer[]): boolean {
 }
 
 /**
- * Обойти слои, изолируя состояние контекста. Слой волен ставить свой режим
+ * Обойти слои, изолируя состояние художника. Слой волен ставить свой режим
  * наложения и прозрачность и не обязан прибираться: следующий начинает с
  * чистого листа. Иначе забытый `lighter` тихо уезжает в чужую отрисовку.
  */
 export function paintStack(
-    g: Ctx2D,
+    p: Painter,
     layers: readonly Layer[],
     brush: Brush,
     scene: Scene,
@@ -35,18 +35,15 @@ export function paintStack(
     for (const layer of layers) {
         const paint = layer[brush];
         if (!layer.enabled || !paint) continue;
-        g.save();
+        p.reset();
         try {
-            if (profiler) profiler.measure(layer.id, () => paint.call(layer, g, scene));
-            else paint.call(layer, g, scene);
+            if (profiler) profiler.measure(layer.id, () => paint.call(layer, p, scene));
+            else paint.call(layer, p, scene);
         } catch (error) {
             fault(layer, error, onFault);
-        } finally {
-            // Слой мог упасть, не сняв собственный save: кадр выйдет кривым,
-            // но следующий начнётся заново — контекст сцена задаёт с нуля.
-            g.restore();
         }
     }
+    p.reset();
 }
 
 /** Шаг обновления состояния слоёв — с той же защитой, что и отрисовка. */

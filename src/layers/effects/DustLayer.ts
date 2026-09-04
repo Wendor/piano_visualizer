@@ -3,7 +3,8 @@ import type { Scene } from "../../core/Scene";
 import type { Quality } from "../../core/Quality";
 import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
-import type { Ctx2D } from "../../core/surface";
+import type { Painter } from "../../paint/Painter";
+import { tint } from "../../paint/Tint";
 
 export interface DustOptions {
     /** Плотность пыли: 0 — нет, 2 — метель. */
@@ -84,36 +85,34 @@ export class DustLayer extends BaseLayer {
         }
     }
 
-    override draw(g: Ctx2D, scene: Scene): void {
-        this.paint(g, scene, 1, 1);
+    override draw(p: Painter, scene: Scene): void {
+        this.paint(p, scene, 1, 1);
     }
 
-    override drawGlow(g: Ctx2D, scene: Scene): void {
+    override drawGlow(p: Painter, scene: Scene): void {
         // В буфере свечения пылинка меньше пикселя — рисуем крупнее и мягче,
         // иначе после размытия от неё не останется следа.
-        this.paint(g, scene, 2.6, 0.55);
+        this.paint(p, scene, 2.6, 0.55);
     }
 
-    private paint(g: Ctx2D, scene: Scene, scale: number, weight: number): void {
+    private paint(p: Painter, scene: Scene, scale: number, weight: number): void {
         if (this.motes.length === 0) return;
         const level = (0.3 + scene.energy * 0.7) * weight;
 
-        g.save();
-        g.globalCompositeOperation = "lighter";
-        // Пылинок сотни, а строка цвета дорогая: раскладываем их по четырём
-        // ступеням яркости и меняем стиль четыре раза за кадр, а не сто.
+        p.blend = "add";
+        // Пылинок сотни, а разбор цвета дорог: раскладываем их по четырём
+        // ступеням яркости и берём четыре цвета за кадр, а не сто.
         for (let step = 0; step < 4; step++) {
             const alpha = ((step + 1) / 4) * 0.5 * level;
             if (alpha <= 0.01) continue;
-            g.fillStyle = `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
+            const shade = tint(`rgba(255, 255, 255, ${alpha.toFixed(3)})`);
             for (const mote of this.motes) {
                 const shine = 0.5 + 0.5 * Math.sin(mote.phase);
                 if (Math.min(3, Math.floor(shine * 4)) !== step) continue;
                 const size = mote.size * scale;
-                g.fillRect(mote.x, mote.y, size, size);
+                p.fill(mote.x, mote.y, size, size, shade);
             }
         }
-        g.restore();
     }
 
     private get target(): number {

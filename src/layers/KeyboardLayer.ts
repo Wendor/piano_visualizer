@@ -3,7 +3,10 @@ import type { Scene } from "../core/Scene";
 import type { PianoKey } from "../core/layout";
 import type { Theme } from "../theme/Theme";
 import { roundRectPath } from "../core/math";
-import { GradientCache, bucket } from "../core/gradients";
+import { GradientBook, bucket, stop } from "../paint/Gradient";
+import type { Gradient } from "../paint/Gradient";
+import type { Corners, Painter } from "../paint/Painter";
+import { tint } from "../paint/Tint";
 import { context2d, createSurface } from "../core/surface";
 import type { Ctx2D, Surface } from "../core/surface";
 
@@ -31,7 +34,11 @@ export class KeyboardLayer extends BaseLayer {
     private readonly whiteCtx: Ctx2D;
     private readonly blackCtx: Ctx2D;
     private readonly press = new Map<number, number>();
-    private readonly gradients = new GradientCache(256);
+    private readonly gradients = new GradientBook(256);
+    /** Скругления клавиши: кортеж один на сцену, а не на клавишу в кадре. */
+    private readonly corners: [number, number, number, number] = [0, 0, 0, 0];
+    /** Кэш клавиш перерисован: движку пора забыть то, что он о нём помнил. */
+    private stale = true;
     private dpr = 1;
 
     constructor(options: Partial<KeyboardOptions> = {}) {
@@ -71,14 +78,32 @@ export class KeyboardLayer extends BaseLayer {
         }
     }
 
-    override draw(g: Ctx2D, scene: Scene): void {
+    override draw(p: Painter, scene: Scene): void {
         const { layout, viewport } = scene;
-        g.drawImage(this.whiteCache, 0, layout.top, viewport.width, layout.height);
-        this.drawPressed(g, scene, false);
-        this.drawSpill(g, scene, false);
-        g.drawImage(this.blackCache, 0, layout.top, viewport.width, layout.height);
-        this.drawPressed(g, scene, true);
-        this.drawSpill(g, scene, true);
+        // Клавиши нарисованы раз и живут картинкой; видеочип держит её у себя
+        // и должен узнать, что она сменилась.
+        if (this.stale) {
+            p.invalidate(this.whiteCache);
+            p.invalidate(this.blackCache);
+            this.stale = false;
+        }
+        p.sprite(this.whiteCache, 0, layout.top, viewport.width, layout.height);
+        this.drawPressed(p, scene, false);
+        this.drawSpill(p, scene, false);
+        p.sprite(this.blackCache, 0, layout.top, viewport.width, layout.height);
+        this.drawPressed(p, scene, true);
+        this.drawSpill(p, scene, true);
+    }
+
+    /** Скруглены только передние (нижние) углы — как у настоящей клавиши. */
+    private radii(key: PianoKey): Corners {
+        const r = key.accidental ? Math.min(3, key.width * 0.16) : Math.min(4, key.width * 0.13);
+        const out = this.corners;
+        out[0] = 0;
+        out[1] = 0;
+        out[2] = r;
+        out[3] = r;
+        return out;
     }
 
     // --- статичный рисунок клавиш -------------------------------------------
@@ -106,6 +131,7 @@ export class KeyboardLayer extends BaseLayer {
 
         this.renderWhiteKeys(scene);
         this.renderBlackKeys(scene);
+        this.stale = true;
     }
 
     private renderWhiteKeys(scene: Scene): void {
@@ -211,11 +237,11 @@ export class KeyboardLayer extends BaseLayer {
     // --- подсветка нажатых ---------------------------------------------------
 
     /**
-     * Свет нажатой клавиши. Яркость уходит в `globalAlpha`, поэтому градиенты
-     * зависят только от цвета и высоты клавиши — и живут в кэше, а не строятся
+     * Свет нажатой клавиши. Яркость уходит в общую прозрачность, поэтому
+     * градиенты зависят только от цвета — и живут в книге, а не собираются
      * заново для каждой клавиши каждый кадр.
      */
-    private drawPressed(g: Ctx2D, scene: Scene, accidental: boolean): void {
+    private drawPressed(p: Painter, scene: Scene, accidental: boolean): void {
         const { layout, theme } = scene;
         const top = layout.top;
         const hair = Math.max(1, 1 / this.dpr);
@@ -230,81 +256,75 @@ export class KeyboardLayer extends BaseLayer {
             const velocity = state ? Math.min(1, state.velocity / 110) : 0.7;
             const alpha = lit * (0.55 + velocity * 0.45);
             const edgeHeight = Math.min(26, key.height * 0.3);
+            const radii = this.radii(key);
+            const foot = Math.min(8, key.height);
 
-            g.save();
-            g.translate(key.x, top);
-            this.keyPath(g, key, 0, 0);
-            g.clip();
+            p.alpha = alpha;
+            p.fillRoundGradient(
+                key.x,
+                top,
+                key.width,
+                key.height,
+                radii,
+                this.pressGradient(theme, hue, accidental),
+                "y"
+            );
+            // Верхняя кромка прямая: скругление живёт только у переднего края.
+            p.fillGradient(key.x, top, key.width, edgeHeight, this.hotGradient(theme, hue), "y");
 
-            g.globalAlpha = alpha;
-            g.fillStyle = this.pressGradient(g, theme, key, hue, accidental);
-            g.fillRect(0, 0, key.width, key.height);
-
-            g.fillStyle = this.hotGradient(g, theme, hue, edgeHeight);
-            g.fillRect(0, 0, key.width, edgeHeight);
-            g.globalAlpha = 1;
-
-            g.fillStyle = this.footGradient(g, key);
-            g.fillRect(0, key.height - 8, key.width, 8);
+            p.alpha = 1;
+            p.fillRoundGradient(
+                key.x,
+                top + key.height - foot,
+                key.width,
+                foot,
+                radii,
+                this.footGradient(),
+                "y"
+            );
 
             // Грани, чтобы соседние нажатые клавиши не сливались в пятно.
-            g.fillStyle = "rgba(6, 8, 16, 0.42)";
-            g.fillRect(0, 0, hair, key.height);
-            g.globalAlpha = alpha;
-            g.fillStyle = theme.color(hue, 82, 0.35);
-            g.fillRect(key.width - hair, 0, hair, key.height);
-            g.globalAlpha = 1;
-            g.restore();
+            p.fill(key.x, top, hair, key.height, EDGE_DARK);
+            p.alpha = alpha;
+            p.fill(key.x + key.width - hair, top, hair, key.height, theme.tint(hue, 82, 0.35));
+            p.alpha = 1;
         }
     }
 
-    private pressGradient(
-        g: Ctx2D,
-        theme: Theme,
-        key: PianoKey,
-        hue: number,
-        accidental: boolean
-    ): CanvasGradient {
-        const h = Math.round(key.height);
-        const id = `body|${theme.palette.id}|${bucket(hue, 2)}|${accidental ? 1 : 0}|${h}`;
-        return this.gradients.get(id, () => {
-            const body = g.createLinearGradient(0, 0, 0, h);
-            if (accidental) {
-                body.addColorStop(0.0, theme.color(hue, 62, 0.98));
-                body.addColorStop(0.55, theme.color(hue, 44, 0.92));
-                body.addColorStop(1.0, theme.color(hue, 26, 0.85));
-            } else {
-                body.addColorStop(0.0, theme.color(hue, 66, 0.96));
-                body.addColorStop(0.4, theme.color(hue, 55, 0.88));
-                body.addColorStop(1.0, theme.color(hue, 44, 0.72));
-            }
-            return body;
-        });
+    private pressGradient(theme: Theme, hue: number, accidental: boolean): Gradient {
+        const id = `body|${theme.palette.id}|${bucket(hue, 2)}|${accidental ? 1 : 0}`;
+        return this.gradients.get(id, () =>
+            accidental
+                ? [
+                      stop(0, theme.tint(hue, 62, 0.98)),
+                      stop(0.55, theme.tint(hue, 44, 0.92)),
+                      stop(1, theme.tint(hue, 26, 0.85))
+                  ]
+                : [
+                      stop(0, theme.tint(hue, 66, 0.96)),
+                      stop(0.4, theme.tint(hue, 55, 0.88)),
+                      stop(1, theme.tint(hue, 44, 0.72))
+                  ]
+        );
     }
 
-    private hotGradient(g: Ctx2D, theme: Theme, hue: number, edgeHeight: number): CanvasGradient {
-        const h = Math.round(edgeHeight);
-        const id = `hot|${theme.palette.id}|${bucket(hue, 2)}|${h}`;
-        return this.gradients.get(id, () => {
-            const hot = g.createLinearGradient(0, 0, 0, h);
-            hot.addColorStop(0, theme.color(hue, 88, 0.75, 100));
-            hot.addColorStop(1, theme.color(hue, 60, 0, 100));
-            return hot;
-        });
+    private hotGradient(theme: Theme, hue: number): Gradient {
+        const id = `hot|${theme.palette.id}|${bucket(hue, 2)}`;
+        return this.gradients.get(id, () => [
+            stop(0, theme.tint(hue, 88, 0.75, 100)),
+            stop(1, theme.tint(hue, 60, 0, 100))
+        ]);
     }
 
-    private footGradient(g: Ctx2D, key: PianoKey): CanvasGradient {
-        const h = Math.round(key.height);
-        return this.gradients.get(`foot|${h}`, () => {
-            const foot = g.createLinearGradient(0, h - 8, 0, h);
-            foot.addColorStop(0, "rgba(0, 0, 0, 0)");
-            foot.addColorStop(1, "rgba(0, 0, 0, 0.45)");
-            return foot;
-        });
+    private footGradient(): Gradient {
+        return this.gradients.get("foot", () => [
+            stop(0, tint("rgba(0, 0, 0, 0)")),
+            stop(1, tint("rgba(0, 0, 0, 0.45)"))
+        ]);
     }
 
-    /** Свет ложится на верх клавиши, не выходя за её контур. */
-    private drawSpill(g: Ctx2D, scene: Scene, accidental: boolean): void {
+    /** Свет ложится на верх клавиши: там прямая кромка, скругление внизу. */
+    private drawSpill(p: Painter, scene: Scene, accidental: boolean): void {
         const { layout, theme } = scene;
         for (const key of layout.keys) {
             if (key.accidental !== accidental) continue;
@@ -314,21 +334,19 @@ export class KeyboardLayer extends BaseLayer {
 
             const hue = theme.hueFor(key.midi, layout);
             const height = Math.round(Math.min(key.height, this.options.spillHeight));
+            const light = this.gradients.get(`spill|${theme.palette.id}|${bucket(hue, 2)}`, () => [
+                stop(0, theme.tint(hue, 70, 0.5)),
+                stop(1, theme.tint(hue, 60, 0))
+            ]);
 
-            g.save();
-            g.globalCompositeOperation = "lighter";
-            g.translate(key.x, layout.top);
-            this.keyPath(g, key, 0, 0);
-            g.clip();
-            g.globalAlpha = lit;
-            g.fillStyle = this.gradients.get(`spill|${theme.palette.id}|${bucket(hue, 2)}|${height}`, () => {
-                const gradient = g.createLinearGradient(0, 0, 0, height);
-                gradient.addColorStop(0, theme.color(hue, 70, 0.5));
-                gradient.addColorStop(1, theme.color(hue, 60, 0));
-                return gradient;
-            });
-            g.fillRect(0, 0, key.width, height);
-            g.restore();
+            p.blend = "add";
+            p.alpha = lit;
+            p.fillGradient(key.x, layout.top, key.width, height, light, "y");
         }
+        p.blend = "normal";
+        p.alpha = 1;
     }
 }
+
+/** Тёмная грань слева от нажатой клавиши: цвет один на всю сцену. */
+const EDGE_DARK = tint("rgba(6, 8, 16, 0.42)");

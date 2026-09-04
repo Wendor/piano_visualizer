@@ -32,10 +32,7 @@ export function registerBuiltinLayers(): void {
         .register("effects.dust", (c, o) => new DustLayer(c.visualizer.quality, o as never))
         .register("effects.sparks", (c, o) => new SparksLayer(c.visualizer.quality, o as never))
         .register("effects.keyLight", (_c, o) => new KeyLightLayer(o as never))
-        .register(
-            "effects.bloom",
-            (c, o) => new BloomLayer(c.visualizer.glow, c.visualizer.quality, o as never)
-        )
+        .register("effects.bloom", (c, o) => new BloomLayer(c.visualizer.quality, o as never))
         .register("effects.topFade", (_c, o) => new TopFadeLayer(o as never))
         .register("effects.strikeLine", (_c, o) => new StrikeLineLayer(o as never))
         .register("keyboard", (_c, o) => new KeyboardLayer(o as never));

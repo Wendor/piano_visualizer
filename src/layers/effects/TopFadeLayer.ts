@@ -1,8 +1,9 @@
 import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
-import { GradientCache } from "../../core/gradients";
+import { GradientBook, stop } from "../../paint/Gradient";
 import type { ParamSpec } from "../../settings/types";
-import type { Ctx2D } from "../../core/surface";
+import type { Painter } from "../../paint/Painter";
+import { tint } from "../../paint/Tint";
 
 export interface TopFadeOptions {
     /** Предельная высота затемнения у верхней кромки, px. */
@@ -17,7 +18,7 @@ export class TopFadeLayer extends BaseLayer {
     readonly options: TopFadeOptions;
     // Затемнение зависит только от палитры и высоты полосы: и то и другое
     // держится кадрами, а разбор цвета и три остановки — работа на каждый.
-    private readonly gradients = new GradientCache(16);
+    private readonly gradients = new GradientBook(16);
 
     constructor(options: Partial<TopFadeOptions> = {}) {
         super();
@@ -44,19 +45,17 @@ export class TopFadeLayer extends BaseLayer {
         ];
     }
 
-    override draw(g: Ctx2D, scene: Scene): void {
+    override draw(p: Painter, scene: Scene): void {
         const height = Math.min(this.options.maxHeight, scene.layout.top * 0.35);
         if (height <= 0) return;
 
         const background = scene.theme.palette.background;
-        g.fillStyle = this.gradients.get(`${background}|${Math.round(height)}`, () => {
-            const gradient = g.createLinearGradient(0, 0, 0, height);
-            gradient.addColorStop(0, background);
-            gradient.addColorStop(0.55, this.fade(background, 0.55));
-            gradient.addColorStop(1, this.fade(background, 0));
-            return gradient;
-        });
-        g.fillRect(0, 0, scene.viewport.width, height);
+        const veil = this.gradients.get(background, () => [
+            stop(0, tint(background)),
+            stop(0.55, tint(this.fade(background, 0.55))),
+            stop(1, tint(this.fade(background, 0)))
+        ]);
+        p.fillGradient(0, 0, scene.viewport.width, height, veil, "y");
     }
 
     /** #rrggbb → rgba(...) с нужной прозрачностью. */

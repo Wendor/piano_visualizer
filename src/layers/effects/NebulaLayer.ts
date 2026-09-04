@@ -1,11 +1,11 @@
 import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
 import type { Quality } from "../../core/Quality";
-import { GradientCache, bucket } from "../../core/gradients";
+import { GradientBook, bucket, stop } from "../../paint/Gradient";
 import { clamp, lerp } from "../../core/math";
 import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
-import type { Ctx2D } from "../../core/surface";
+import type { Painter } from "../../paint/Painter";
 
 export interface NebulaOptions {
     /** Плотность облаков: 0 — выключено, 2 — густой туман. */
@@ -41,7 +41,7 @@ export class NebulaLayer extends BaseLayer {
     readonly options: NebulaOptions;
 
     private readonly clouds: Cloud[] = [];
-    private readonly gradients = new GradientCache(128);
+    private readonly gradients = new GradientBook(128);
     /** Куда смещён центр внимания: середина звучащих клавиш. */
     private focus = 0.5;
     private width = 0;
@@ -133,7 +133,7 @@ export class NebulaLayer extends BaseLayer {
         }
     }
 
-    override drawGlow(g: Ctx2D, scene: Scene): void {
+    override drawGlow(p: Painter, scene: Scene): void {
         const { density } = this.options;
         if (density <= 0.01 || this.width <= 0) return;
 
@@ -151,19 +151,23 @@ export class NebulaLayer extends BaseLayer {
             const hue = lerp(palette.hueLow, palette.hueHigh, clamp(cloud.x / this.width, 0, 1));
             const radius = Math.max(32, bucket(cloud.radius, 24));
 
-            g.save();
-            g.globalCompositeOperation = "lighter";
-            g.globalAlpha = alpha;
-            g.translate(cloud.x, cloud.y);
-            g.fillStyle = this.gradients.get(`${palette.id}|${bucket(hue, 6)}|${radius}`, () => {
-                const gradient = g.createRadialGradient(0, 0, 0, 0, 0, radius);
-                gradient.addColorStop(0, scene.theme.color(hue, 50, 0.7));
-                gradient.addColorStop(0.45, scene.theme.color(hue, 46, 0.32));
-                gradient.addColorStop(1, scene.theme.color(hue, 40, 0));
-                return gradient;
-            });
-            g.fillRect(-radius, -radius, radius * 2, radius * 2);
-            g.restore();
+            const body = this.gradients.get(`${palette.id}|${bucket(hue, 6)}`, () => [
+                stop(0, scene.theme.tint(hue, 50, 0.7)),
+                stop(0.45, scene.theme.tint(hue, 46, 0.32)),
+                stop(1, scene.theme.tint(hue, 40, 0))
+            ]);
+            p.blend = "add";
+            p.alpha = alpha;
+            p.fillRadial(
+                cloud.x - radius,
+                cloud.y - radius,
+                radius * 2,
+                radius * 2,
+                cloud.x,
+                cloud.y,
+                radius,
+                body
+            );
         }
     }
 

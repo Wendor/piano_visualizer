@@ -3,26 +3,20 @@ import { FrameProfiler } from "./FrameProfiler";
 import { paintStack, updateStack, wantsGlow } from "./paint";
 import type { Scene } from "./Scene";
 import type { Layer } from "./types";
+import type { Painter } from "../paint/Painter";
 
-/** Холст, помнящий только то, что слои реально трогают: alpha и режим наложения. */
-class FakeContext {
-    globalAlpha = 1;
-    globalCompositeOperation = "source-over";
-    private readonly stack: Array<{ alpha: number; op: string }> = [];
+/** Художник, помнящий только то, что слои реально трогают: прозрачность и наложение. */
+class FakePainter {
+    alpha = 1;
+    blend = "normal";
 
-    save(): void {
-        this.stack.push({ alpha: this.globalAlpha, op: this.globalCompositeOperation });
-    }
-
-    restore(): void {
-        const saved = this.stack.pop();
-        if (!saved) return;
-        this.globalAlpha = saved.alpha;
-        this.globalCompositeOperation = saved.op;
+    reset(): void {
+        this.alpha = 1;
+        this.blend = "normal";
     }
 }
 
-const context = (): CanvasRenderingContext2D => new FakeContext() as unknown as CanvasRenderingContext2D;
+const context = (): Painter => new FakePainter() as unknown as Painter;
 const scene = {} as Scene;
 
 function layer(id: string, body: Partial<Layer>): Layer {
@@ -33,18 +27,18 @@ describe("обход слоёв", () => {
     it("слой, не прибравший за собой, не портит следующему", () => {
         const seen: Array<{ alpha: number; op: string }> = [];
         const dirty = layer("dirty", {
-            drawGlow: (g) => {
-                g.globalAlpha = 0.2;
-                g.globalCompositeOperation = "lighter";
+            drawGlow: (p) => {
+                p.alpha = 0.2;
+                p.blend = "add";
             }
         });
         const next = layer("next", {
-            drawGlow: (g) => seen.push({ alpha: g.globalAlpha, op: g.globalCompositeOperation })
+            drawGlow: (p) => seen.push({ alpha: p.alpha, op: p.blend })
         });
 
         paintStack(context(), [dirty, next], "drawGlow", scene);
 
-        expect(seen).toEqual([{ alpha: 1, op: "source-over" }]);
+        expect(seen).toEqual([{ alpha: 1, op: "normal" }]);
     });
 
     it("выключенный слой не рисует", () => {

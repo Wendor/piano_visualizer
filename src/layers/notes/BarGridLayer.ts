@@ -5,7 +5,8 @@ import { firstLineAtOrAfter } from "../../score/grid";
 import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
 import { NoteStyle, noteStyle } from "./style";
-import type { Ctx2D } from "../../core/surface";
+import type { Painter } from "../../paint/Painter";
+import type { Tint } from "../../paint/Tint";
 
 export interface BarGridOptions {
     /** Яркость линий такта, 0 — не рисовать. */
@@ -72,31 +73,30 @@ export class BarGridLayer extends BaseLayer {
         ];
     }
 
-    override draw(g: Ctx2D, scene: Scene): void {
+    override draw(p: Painter, scene: Scene): void {
         const score = scene.playback.score;
         if (!score || this.style.options.speed <= 0) return;
 
         const hue = scene.theme.midHue;
         // Доли ложатся первыми: линия такта, совпав с ними, должна быть сверху.
         if (this.options.beats > 0) {
-            this.paint(g, scene, score.grid.beats, scene.theme.color(hue, 72, this.options.beats));
+            this.paint(p, scene, score.grid.beats, scene.theme.tint(hue, 72, this.options.beats));
         }
         if (this.options.bars > 0) {
-            this.paint(g, scene, score.grid.bars, scene.theme.color(hue, 84, this.options.bars));
+            this.paint(p, scene, score.grid.bars, scene.theme.tint(hue, 84, this.options.bars));
         }
     }
 
-    private paint(g: Ctx2D, scene: Scene, times: readonly number[], color: string): void {
+    private paint(p: Painter, scene: Scene, times: readonly number[], tint: Tint): void {
         const { layout, viewport, playback } = scene;
         const speed = this.style.options.speed;
         const now = playback.time;
         const thickness = 1 / viewport.dpr;
 
-        g.fillStyle = color;
         for (let i = firstLineAtOrAfter(times, now); i < times.length; i++) {
             const y = layout.top - (times[i]! - now) * speed;
             if (y < 0) break;
-            g.fillRect(0, snap(y, viewport.dpr), viewport.width, thickness);
+            p.fill(0, snap(y, viewport.dpr), viewport.width, thickness, tint);
         }
     }
 }

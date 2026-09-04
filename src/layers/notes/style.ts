@@ -1,11 +1,13 @@
-import { roundRectPath } from "../../core/math";
-import { GradientCache, bucket } from "../../core/gradients";
 import type { Quality } from "../../core/Quality";
 import type { Theme } from "../../theme/Theme";
 import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
-import { context2d, createSurface } from "../../core/surface";
-import type { Ctx2D, Surface } from "../../core/surface";
+import { GradientBook, bucket, stop } from "../../paint/Gradient";
+import { CLOUD_TILE } from "../../paint/cloud";
+import type { Gradient } from "../../paint/Gradient";
+import { SQUARE } from "../../paint/Painter";
+import type { Corners, Painter } from "../../paint/Painter";
+import type { Tint } from "../../paint/Tint";
 
 export interface NoteStyleOptions {
     /** Скорость полёта ноты, px/сек. */
@@ -106,18 +108,15 @@ export const seedOf = (index: number): number => (index * 0.618033988749895) % 1
 export class NoteStyle {
     readonly options: NoteStyleOptions;
 
-    private readonly gradients = new GradientCache();
+    private readonly gradients = new GradientBook();
     private quality: Quality | null = null;
-    private texture: Surface | null = null;
-    private readonly patterns = new WeakMap<Ctx2D, CanvasPattern>();
     /**
-     * Рабочие мелочи, которые иначе рождались бы на каждую ноту в каждом кадре:
-     * два кортежа радиусов и матрица сдвига текстуры. Нот в кадре сотня, кадров
-     * шестьдесят — это тысячи объектов в секунду на ровном месте.
+     * Кортежи радиусов, которые иначе рождались бы на каждую ноту в каждом
+     * кадре. Нот в кадре сотня, кадров шестьдесят — это тысячи объектов в
+     * секунду на ровном месте.
      */
     private readonly corners: [number, number, number, number] = [0, 0, 0, 0];
     private readonly innerCorners: [number, number, number, number] = [0, 0, 0, 0];
-    private readonly shift = typeof DOMMatrix === "function" ? new DOMMatrix() : null;
     /** Время сцены: живая заливка и шлейф должны двигаться. */
     time = 0;
 
@@ -258,31 +257,28 @@ export class NoteStyle {
     /**
      * Свечение: пустая нота светится кантом, залитая — всей площадью.
      *
-     * Прямоугольник без скруглений и без пути: в буфере свечения нота вчетверо
-     * уже, чем на экране, скругление там — пара пикселей, и размытие съедает
-     * его раньше, чем глаз заметит. `fillRect` вместо `roundRect` + `fill`
-     * снимает построение пути с каждой ноты в каждом кадре.
+     * Прямоугольник без скруглений: в буфере свечения нота вчетверо уже, чем
+     * на экране, скругление там — пара пикселей, и размытие съедает его
+     * раньше, чем глаз заметит.
      */
-    drawGlow(g: Ctx2D, theme: Theme, bar: NoteBar): void {
-        this.drawTrail(g, theme, bar);
-        g.globalAlpha = 0.5 + bar.velocity * 0.28;
+    drawGlow(p: Painter, theme: Theme, bar: NoteBar): void {
+        this.drawTrail(p, theme, bar);
+        p.alpha = 0.5 + bar.velocity * 0.28;
 
         if (bar.hollow) {
-            g.strokeStyle = theme.color(bar.hue, 56);
-            g.lineWidth = Math.max(2, bar.width * 0.24);
-            g.strokeRect(bar.x, bar.top, bar.width, bar.height);
+            const width = Math.max(2, bar.width * 0.24);
+            p.strokeRound(bar.x, bar.top, bar.width, bar.height, SQUARE, width, theme.tint(bar.hue, 56));
         } else {
-            g.fillStyle = theme.color(bar.hue, 54);
-            g.fillRect(bar.x, bar.top, bar.width, bar.height);
+            p.fill(bar.x, bar.top, bar.width, bar.height, theme.tint(bar.hue, 54));
         }
-        g.globalAlpha = 1;
+        p.alpha = 1;
     }
 
     /**
      * Шлейф — размазанный след за задним краем ноты. Живёт только в буфере
      * свечения: там он и стоит дёшево, и сразу получается мягким.
      */
-    private drawTrail(g: Ctx2D, theme: Theme, bar: NoteBar): void {
+    private drawTrail(p: Painter, theme: Theme, bar: NoteBar): void {
         const { trail, speed } = this.options;
         if (trail <= 0.01 || this.detail < 0.5) return;
 
@@ -292,170 +288,124 @@ export class NoteStyle {
         // Хвост тянется назад по ходу движения: у падающей ноты он сверху,
         // у растущей — снизу, где её уже нет.
         const y = bar.rising ? bar.top + bar.height : bar.top - length;
-        const key = `trail|${theme.palette.id}|${bucket(bar.hue, 4)}|${Math.round(length)}|${bar.rising ? 1 : 0}`;
-        const gradient = this.gradients.get(key, () => {
-            const made = g.createLinearGradient(0, 0, 0, length);
-            const near = theme.color(bar.hue, 52, 0.7);
-            const far = theme.color(bar.hue, 46, 0);
-            made.addColorStop(0, bar.rising ? near : far);
-            made.addColorStop(1, bar.rising ? far : near);
-            return made;
+        const key = `trail|${theme.palette.id}|${bucket(bar.hue, 4)}|${bar.rising ? 1 : 0}`;
+        const tail = this.gradients.get(key, () => {
+            const near = theme.tint(bar.hue, 52, 0.7);
+            const far = theme.tint(bar.hue, 46, 0);
+            return bar.rising ? [stop(0, near), stop(1, far)] : [stop(0, far), stop(1, near)];
         });
 
-        g.save();
-        g.translate(bar.x, y);
-        g.globalAlpha = 0.5 + bar.velocity * 0.35;
-        g.fillStyle = gradient;
-        g.fillRect(0, 0, bar.width, length);
-        g.restore();
+        p.alpha = 0.5 + bar.velocity * 0.35;
+        p.fillGradient(bar.x, y, bar.width, length, tail, "y");
+        p.alpha = 1;
     }
 
     /**
      * Одна форма для всех нот: кант + сердцевина. Разница только в плотности
      * заливки — диез залит, натуральная нота остаётся пустой.
      */
-    draw(g: Ctx2D, theme: Theme, bar: NoteBar): void {
+    draw(p: Painter, theme: Theme, bar: NoteBar): void {
         const filled = !bar.hollow;
         const alpha = 0.85 + bar.velocity * 0.15;
         const radii = this.radii(bar);
         const stroke = Math.max(1.4, Math.min(3.6, bar.width * 0.16));
-        const { width, height } = bar;
+        const { x, top, width, height } = bar;
 
-        // Всё рисуется от угла ноты: тогда градиент зависит только от ширины
-        // и цвета, а значит его можно взять из кэша, а не строить заново.
-        g.save();
-        g.translate(bar.x, bar.top);
+        if (this.flatFill) p.fillRound(x, top, width, height, radii, this.bodyTint(theme, bar, filled));
+        else p.fillRoundGradient(x, top, width, height, radii, this.body(theme, bar, filled), "x");
 
-        // Путь строится дважды, а не четырежды: холст помнит его до следующего
-        // `beginPath`, поэтому тело и живая заливка ложатся по одному контуру,
-        // а кант и блик — по другому.
-        g.fillStyle = this.body(g, theme, bar, filled);
-        roundRectPath(g, 0, 0, width, height, radii);
-        g.fill();
+        this.drawTexture(p, bar, radii);
 
-        this.drawTexture(g, bar);
-
+        // Кант откладывается внутрь: линия идёт по контуру, и половина её
+        // ширины ушла бы наружу ноты, съедая зазор до соседней.
         const inset = stroke / 2;
         const innerRadii = this.innerCorners;
         for (let i = 0; i < 4; i++) innerRadii[i] = Math.max(0, radii[i]! - inset);
         const innerW = Math.max(0, width - stroke);
         const innerH = Math.max(0, height - stroke);
+        const ix = x + inset;
+        const iy = top + inset;
 
-        g.strokeStyle = theme.color(bar.hue, filled ? 72 : 66, alpha);
-        g.lineWidth = stroke;
-        roundRectPath(g, inset, inset, innerW, innerH, innerRadii);
-        g.stroke();
+        p.strokeRound(
+            ix,
+            iy,
+            innerW,
+            innerH,
+            innerRadii,
+            stroke,
+            theme.tint(bar.hue, filled ? 72 : 66, alpha)
+        );
 
         // Тонкий блик по канту — нота читается как стекло. Первое, чем стоит
         // пожертвовать на слабой машине: на глаз почти незаметен.
         if (this.detail >= 0.5) {
-            g.globalAlpha = alpha * (filled ? 0.45 : 0.55);
-            g.strokeStyle = theme.color(bar.hue, 86, 1);
-            g.lineWidth = Math.max(0.6, stroke * 0.3);
-            g.stroke();
-            g.globalAlpha = 1;
+            const light = Math.max(0.6, stroke * 0.3);
+            p.alpha = alpha * (filled ? 0.45 : 0.55);
+            p.strokeRound(ix, iy, innerW, innerH, innerRadii, light, theme.tint(bar.hue, 86, 1));
+            p.alpha = 1;
         }
-        g.restore();
     }
 
     /**
      * Живая заливка: полупрозрачная облачная текстура внутри ноты, медленно
      * плывущая вдоль неё. Один тайл на всю сцену, поэтому цена — одна заливка.
      */
-    private drawTexture(g: Ctx2D, bar: NoteBar): void {
+    private drawTexture(p: Painter, bar: NoteBar, radii: Corners): void {
         const amount = this.options.texture;
         // Только высшая ступень. Узор ложится сложением, а сложение читает
         // то, что уже лежит на холсте: там, где рисует процессор, это самая
         // дорогая вещь во всей сцене — 15 мс из 29 у нот.
         if (amount <= 0.01 || this.detail < 1) return;
 
-        const pattern = this.pattern(g);
-        if (!pattern) return;
+        // Каждая нота плывёт по-своему: своя точка в тайле и своя скорость.
+        // Одной фазы мало — облака шли бы парадом, просто из разных мест.
+        const phaseX = bar.seed * CLOUD_TILE;
+        // Семёрка расцепляет оси: иначе все ноты сидели бы на одной диагонали.
+        const phaseY = ((bar.seed * 7) % 1) * CLOUD_TILE;
+        const drift = -this.time * 22 * (0.7 + bar.seed * 0.6);
 
-        if (this.shift) {
-            // Каждая нота плывёт по-своему: своя точка в тайле и своя скорость.
-            // Одной фазы мало — облака шли бы парадом, просто из разных мест.
-            const phaseX = bar.seed * 64;
-            // Семёрка расцепляет оси: иначе все ноты сидели бы на одной диагонали.
-            const phaseY = ((bar.seed * 7) % 1) * 64;
-            const drift = -this.time * 22 * (0.7 + bar.seed * 0.6);
-            // Матрица одна на сцену: сдвиг — это её последние два числа.
-            this.shift.e = phaseX;
-            this.shift.f = (drift + phaseY) % 64;
-            pattern.setTransform(this.shift);
-        }
-
-        // Контур уже построен телом ноты — заливка ложится по нему же.
-        g.save();
-        g.globalCompositeOperation = "lighter";
-        g.globalAlpha = amount * (0.45 + bar.velocity * 0.55);
-        g.fillStyle = pattern;
-        g.fill();
-        g.restore();
+        p.cloud(
+            bar.x,
+            bar.top,
+            bar.width,
+            bar.height,
+            radii,
+            amount * (0.45 + bar.velocity * 0.55),
+            phaseX,
+            (drift + phaseY) % CLOUD_TILE
+        );
     }
 
-    private pattern(g: Ctx2D): CanvasPattern | null {
-        const found = this.patterns.get(g);
-        if (found) return found;
-        this.texture ??= makeTexture();
-        const made = g.createPattern(this.texture, "repeat");
-        if (!made) return null;
-        this.patterns.set(g, made);
-        return made;
-    }
-
-    /** Заливка тела ноты: градиент или ровный цвет на слабой машине. */
-    private body(g: Ctx2D, theme: Theme, bar: NoteBar, filled: boolean): CanvasGradient | string {
+    /** Ровный цвет тела: им заливают ноту там, где градиент не по карману. */
+    private bodyTint(theme: Theme, bar: NoteBar, filled: boolean): Tint {
         const hue = bucket(bar.hue, 2);
-        const width = Math.max(2, Math.round(bar.width));
         const velocity = bucket(bar.velocity, 0.1);
-        const key = `${theme.palette.id}|${hue}|${width}|${filled ? 1 : 0}|${velocity.toFixed(1)}`;
-
         const alpha = 0.85 + velocity * 0.15;
-        const coreLightness = filled ? 58 + velocity * 8 : 50;
-        const coreAlpha = filled ? alpha : 0.32 * alpha;
         // Ровная заливка берёт цвет сердцевины: именно её видно на всей ширине,
         // а к краям градиент лишь чуть темнеет.
-        if (this.flatFill) return theme.color(hue, coreLightness, coreAlpha);
+        return theme.tint(hue, filled ? 58 + velocity * 8 : 50, filled ? alpha : 0.32 * alpha);
+    }
+
+    /** Поперечный градиент тела: к краям темнее, в сердцевине ярче. */
+    private body(theme: Theme, bar: NoteBar, filled: boolean): Gradient {
+        const hue = bucket(bar.hue, 2);
+        const velocity = bucket(bar.velocity, 0.1);
+        const key = `${theme.palette.id}|${hue}|${filled ? 1 : 0}|${velocity.toFixed(1)}`;
 
         return this.gradients.get(key, () => {
+            const alpha = 0.85 + velocity * 0.15;
+            const coreLightness = filled ? 58 + velocity * 8 : 50;
+            const coreAlpha = filled ? alpha : 0.32 * alpha;
             const edgeLightness = filled ? 44 + velocity * 8 : 42;
             const edgeAlpha = filled ? 0.9 * alpha : 0.2 * alpha;
 
-            const body = g.createLinearGradient(0, 0, width, 0);
-            body.addColorStop(0, theme.color(hue, edgeLightness, edgeAlpha));
-            body.addColorStop(0.5, theme.color(hue, coreLightness, coreAlpha));
-            body.addColorStop(1, theme.color(hue, edgeLightness, edgeAlpha));
-            return body;
+            return [
+                stop(0, theme.tint(hue, edgeLightness, edgeAlpha)),
+                stop(0.5, theme.tint(hue, coreLightness, coreAlpha)),
+                stop(1, theme.tint(hue, edgeLightness, edgeAlpha))
+            ];
         });
     }
-}
-
-/**
- * Облачный тайл для живой заливки. Каждое пятно рисуется девять раз со сдвигом
- * на размер тайла — тогда текстура повторяется без видимых швов.
- */
-function makeTexture(size = 64): Surface {
-    const canvas = createSurface(size, size);
-    const g = context2d(canvas, "облачный тайл");
-
-    for (let i = 0; i < 14; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        // Пятна мельче ширины ноты — иначе внутри узкого диеза не видно жизни.
-        const radius = 5 + Math.random() * 14;
-        const alpha = 0.22 + Math.random() * 0.38;
-        for (const dx of [-size, 0, size]) {
-            for (const dy of [-size, 0, size]) {
-                const gradient = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, radius);
-                gradient.addColorStop(0, `rgba(255, 255, 255, ${alpha.toFixed(3)})`);
-                gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
-                g.fillStyle = gradient;
-                g.fillRect(x + dx - radius, y + dy - radius, radius * 2, radius * 2);
-            }
-        }
-    }
-    return canvas;
 }
 
 /** Один экземпляр на сцену: оба слоя нот смотрят в него. */

@@ -1,6 +1,5 @@
 import { Cadence } from "./Cadence";
 import { FrameProfiler } from "./FrameProfiler";
-import { GlowBuffer } from "./GlowBuffer";
 import { paintStack, updateStack, wantsGlow } from "./paint";
 import { Quality } from "./Quality";
 import { layerRegistry, inputRegistry } from "./registry";
@@ -8,8 +7,9 @@ import { askFrame, coalesce, dropFrame } from "./schedule";
 import { Scene } from "./Scene";
 import type { LayerFault } from "./paint";
 import type { Layer } from "./types";
-import { context2d } from "./surface";
-import type { Ctx2D, Surface } from "./surface";
+import type { Surface } from "./surface";
+import { Canvas2DEngine } from "../paint/canvas/Canvas2DEngine";
+import type { Engine } from "../paint/Painter";
 import { canvasSize, resolveViewport } from "./viewport";
 import type { InputSource } from "../input/types";
 
@@ -32,11 +32,18 @@ const windowViewport: ViewportSource = () => ({
     devicePixelRatio: window.devicePixelRatio || 1
 });
 
+/** Как завести движок рисования на этом холсте. */
+export type EngineSource = (canvas: Surface) => Engine;
+
 export interface VisualizerOptions {
     canvas: Surface;
     /** Потолок devicePixelRatio: 2 хватает и на Retina. */
     maxDpr?: number;
-    glowScale?: number;
+    /**
+     * Чем рисовать. По умолчанию — холст 2D: он есть везде. Видеочип быстрее
+     * там, где холст растеризует процессор, но его может не оказаться вовсе.
+     */
+    engine?: EngineSource;
     /**
      * Размер окна. По умолчанию — само окно; в рабочем потоке окна нет, и его
      * размер приходит сообщением, как и всё остальное.
@@ -57,8 +64,8 @@ export interface VisualizerOptions {
 export class Visualizer {
     readonly scene = new Scene();
     readonly canvas: Surface;
-    readonly ctx: Ctx2D;
-    readonly glow: GlowBuffer;
+    /** Чем рисуем. У двойника, который не рисует, движка нет вовсе. */
+    readonly engine: Engine | null;
     /** Ступень качества: она же решает, в каком разрешении рисовать. */
     readonly quality = new Quality();
     /** Замер кадра по слоям. Выключен, пока его не попросят. */
@@ -83,11 +90,14 @@ export class Visualizer {
 
     constructor(options: VisualizerOptions) {
         this.canvas = options.canvas;
-        this.ctx = context2d(this.canvas, "сцена");
         this.maxDpr = options.maxDpr ?? 2;
         this.viewportOf = options.viewport ?? windowViewport;
         this.paints = options.paints ?? true;
-        this.glow = new GlowBuffer(options.glowScale ?? this.quality.profile.glowScale);
+        // Двойнику движок не заводим вовсе: он держит сцену и настройки ради
+        // ввода и звука, а холста не касается — незачем ему ни контекст, ни
+        // буфер свечения, ни память под них.
+        this.engine = this.paints ? (options.engine ?? ((c) => new Canvas2DEngine(c)))(this.canvas) : null;
+        this.engine?.setGlowScale(this.quality.profile.glowScale);
         this.quality.events.on("change", () => this.resize());
     }
 
@@ -234,7 +244,7 @@ export class Visualizer {
             renderScale,
             maxPixels
         });
-        this.glow.setScale(glowScale);
+        this.engine?.setGlowScale(glowScale);
         this.scene.resize(viewport);
         // Двойнику холст не нужен: он живёт ради сцены и настроек. Слоям тоже
         // незачем перестраивать кэши картинки, которую никто не увидит.
@@ -250,9 +260,7 @@ export class Visualizer {
             this.canvas.style.width = `${viewport.width}px`;
             this.canvas.style.height = `${viewport.height}px`;
         }
-        this.ctx.setTransform(viewport.dpr, 0, 0, viewport.dpr, 0, 0);
-
-        this.glow.resize(viewport);
+        this.engine?.resize(viewport);
         // Буфер только что очищен пересозданием холста: ждать своей очереди
         // ему нельзя, иначе кадр выйдет без свечения вовсе.
         this.glowClock.force();
@@ -285,21 +293,22 @@ export class Visualizer {
      * по слоям вместо двух.
      */
     render(dt: number): void {
-        const { scene, ctx } = this;
+        const { scene, engine } = this;
+        if (!engine) return;
 
         updateStack(this.layerList, scene, dt, this.onFault, this.profiler);
 
         // Свечение рисуют, пока есть кому его показать. Выключенный блум —
         // это не «сцена без свечения», это сцена, которой незачем его считать.
         if (wantsGlow(this.layerList) && this.glowClock.due(dt)) {
-            const glowCtx = this.glow.begin(scene.viewport);
-            paintStack(glowCtx, this.layerList, "drawGlow", scene, this.onFault, this.profiler);
+            const glow = engine.beginGlow(scene.viewport);
+            if (glow) {
+                paintStack(glow, this.layerList, "drawGlow", scene, this.onFault, this.profiler);
+                engine.endGlow();
+            }
         }
 
-        ctx.setTransform(scene.viewport.dpr, 0, 0, scene.viewport.dpr, 0, 0);
-        ctx.globalAlpha = 1;
-        ctx.globalCompositeOperation = "source-over";
-        ctx.filter = "none";
-        paintStack(ctx, this.layerList, "draw", scene, this.onFault, this.profiler);
+        paintStack(engine.begin(scene.viewport), this.layerList, "draw", scene, this.onFault, this.profiler);
+        engine.end();
     }
 }

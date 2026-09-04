@@ -2,7 +2,7 @@ import { BaseLayer, Stage } from "../../core/types";
 import type { ParamSpec } from "../../settings/types";
 import type { Scene } from "../../core/Scene";
 import type { Quality } from "../../core/Quality";
-import type { Ctx2D } from "../../core/surface";
+import type { Painter } from "../../paint/Painter";
 
 /** Чем группа искр отличается в свечении и на экране. */
 interface Look {
@@ -158,41 +158,61 @@ export class SparksLayer extends BaseLayer {
         this.sparks.sort(byGroup);
     }
 
-    override drawGlow(g: Ctx2D, scene: Scene): void {
-        this.paint(g, scene, { lightness: 68, alpha: 0.85, tail: 0.014, wide: true });
-        g.globalAlpha = 1;
+    override drawGlow(p: Painter, scene: Scene): void {
+        this.paint(p, scene, { lightness: 68, alpha: 0.85, tail: 0.014, wide: true });
     }
 
-    override draw(g: Ctx2D, scene: Scene): void {
-        g.globalCompositeOperation = "lighter";
-        this.paint(g, scene, { lightness: 74, alpha: 0.9, tail: 0.012, wide: false });
+    override draw(p: Painter, scene: Scene): void {
+        p.blend = "add";
+        this.paint(p, scene, { lightness: 74, alpha: 0.9, tail: 0.012, wide: false });
     }
 
     /**
-     * Одна обводка на группу вместо одной на искру: цвет, прозрачность и
+     * Одна пачка на группу вместо одной линии на искру: цвет, прозрачность и
      * толщина ставятся раз в десяток искр, а не сто раз за кадр. Внутри группы
      * они одинаковы — на то она и группа.
      */
-    private paint(g: Ctx2D, scene: Scene, look: Look): void {
+    private paint(p: Painter, scene: Scene, look: Look): void {
         const sparks = this.sparks;
         if (sparks.length === 0) return;
-        g.lineCap = "round";
+        this.fit(sparks.length);
+        const points = this.points;
 
         let group = -1;
+        let count = 0;
+        let width = 1;
+        let head: Spark | null = null;
+
         for (let i = 0; i < sparks.length; i++) {
             const spark = sparks[i]!;
             if (spark.group !== group) {
-                if (group >= 0) g.stroke();
+                if (head) this.flush(p, scene, look, head, count, width);
                 group = spark.group;
-                g.globalAlpha = spark.k * look.alpha;
-                g.strokeStyle = scene.theme.color(spark.hue, look.lightness, 1);
-                g.lineWidth = look.wide ? 1.6 + spark.size * 1.6 : spark.size * (0.7 + spark.k * 0.9);
-                g.beginPath();
+                head = spark;
+                count = 0;
+                width = look.wide ? 1.6 + spark.size * 1.6 : spark.size * (0.7 + spark.k * 0.9);
             }
-            g.moveTo(spark.x, spark.y);
-            g.lineTo(spark.x - spark.vx * look.tail, spark.y - spark.vy * look.tail);
+            const at = count * 4;
+            points[at] = spark.x;
+            points[at + 1] = spark.y;
+            points[at + 2] = spark.x - spark.vx * look.tail;
+            points[at + 3] = spark.y - spark.vy * look.tail;
+            count++;
         }
-        g.stroke();
+        if (head) this.flush(p, scene, look, head, count, width);
+    }
+
+    private flush(p: Painter, scene: Scene, look: Look, head: Spark, count: number, width: number): void {
+        p.alpha = head.k * look.alpha;
+        p.lines(this.points, count, width, scene.theme.tint(head.hue, look.lightness, 1));
+    }
+
+    /** Концы отрезков живут между кадрами: искр сотни, а массив нужен один. */
+    private points = new Float32Array(0);
+
+    private fit(count: number): void {
+        if (this.points.length >= count * 4) return;
+        this.points = new Float32Array(count * 4);
     }
 }
 

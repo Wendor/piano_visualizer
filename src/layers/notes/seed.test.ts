@@ -3,6 +3,7 @@ import { Scene } from "../../core/Scene";
 import { makeScore } from "../../score/types";
 import { NoteStyle, seedOf } from "./style";
 import type { NoteBar } from "./style";
+import type { Painter } from "../../paint/Painter";
 import { RisingNotesLayer } from "./RisingNotesLayer";
 import { FallingNotesLayer } from "./FallingNotesLayer";
 
@@ -10,14 +11,14 @@ import { FallingNotesLayer } from "./FallingNotesLayer";
 class Recorder extends NoteStyle {
     readonly seen: NoteBar[] = [];
 
-    override draw(_g: CanvasRenderingContext2D, _theme: never, bar: NoteBar): void {
+    override draw(_p: Painter, _theme: never, bar: NoteBar): void {
         this.seen.push(bar);
     }
 
     override drawGlow(): void {}
 }
 
-const canvas = {} as CanvasRenderingContext2D;
+const canvas = {} as Painter;
 
 function ready(): Scene {
     const scene = new Scene();

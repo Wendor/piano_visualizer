@@ -3,7 +3,7 @@ import type { Scene } from "../../core/Scene";
 import { isAccidental } from "../../core/layout";
 import { firstNoteAtOrAfter } from "../../score/types";
 import { NoteBars, NoteStyle, noteStyle, seedOf } from "./style";
-import type { Ctx2D } from "../../core/surface";
+import type { Painter } from "../../paint/Painter";
 
 /**
  * Воспроизведение файла: нота падает сверху и в свой момент входит в клавишу.
@@ -67,11 +67,11 @@ export class FallingNotesLayer extends BaseLayer {
         }
     }
 
-    override drawGlow(g: Ctx2D, scene: Scene): void {
-        for (let i = 0; i < this.bars.length; i++) this.style.drawGlow(g, scene.theme, this.bars.at(i));
+    override drawGlow(p: Painter, scene: Scene): void {
+        for (let i = 0; i < this.bars.length; i++) this.style.drawGlow(p, scene.theme, this.bars.at(i));
     }
 
-    override draw(g: Ctx2D, scene: Scene): void {
-        for (let i = 0; i < this.bars.length; i++) this.style.draw(g, scene.theme, this.bars.at(i));
+    override draw(p: Painter, scene: Scene): void {
+        for (let i = 0; i < this.bars.length; i++) this.style.draw(p, scene.theme, this.bars.at(i));
     }
 }

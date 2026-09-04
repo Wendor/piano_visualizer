@@ -1,8 +1,8 @@
 import { BaseLayer, Stage } from "../../core/types";
 import type { ParamSpec } from "../../settings/types";
 import type { Scene } from "../../core/Scene";
-import { GradientCache, bucket } from "../../core/gradients";
-import type { Ctx2D } from "../../core/surface";
+import { GradientBook, bucket, stop } from "../../paint/Gradient";
+import type { Painter } from "../../paint/Painter";
 
 export interface KeyLightOptions {
     /** Скорость затухания вспышки удара, 1/сек. */
@@ -19,7 +19,7 @@ export class KeyLightLayer extends BaseLayer {
     readonly options: KeyLightOptions;
 
     private readonly flash = new Map<number, number>();
-    private readonly gradients = new GradientCache(256);
+    private readonly gradients = new GradientBook(256);
     private detach: (() => void) | null = null;
 
     constructor(options: Partial<KeyLightOptions> = {}) {
@@ -80,7 +80,7 @@ export class KeyLightLayer extends BaseLayer {
         }
     }
 
-    override drawGlow(g: Ctx2D, scene: Scene): void {
+    override drawGlow(p: Painter, scene: Scene): void {
         const { layout, theme } = scene;
 
         for (const key of layout.keys) {
@@ -96,19 +96,15 @@ export class KeyLightLayer extends BaseLayer {
             // и брать готовый градиент из кэша, а яркость отдать globalAlpha.
             const radius = Math.max(16, bucket(Math.max(spread, height), 16));
 
-            g.save();
-            g.translate(key.x + key.width / 2, layout.top);
-            g.globalAlpha = intensity;
-            g.fillStyle = this.gradients.get(`${theme.palette.id}|${bucket(hue, 4)}|${radius}`, () => {
-                const gradient = g.createRadialGradient(0, 0, 0, 0, 0, radius);
-                gradient.addColorStop(0, theme.color(hue, 60, 0.7));
-                gradient.addColorStop(0.42, theme.color(hue, 52, 0.34));
-                gradient.addColorStop(1, theme.color(hue, 50, 0));
-                return gradient;
-            });
-            g.fillRect(-spread, -height, spread * 2, height + 10);
-            g.restore();
+            const halo = this.gradients.get(`${theme.palette.id}|${bucket(hue, 4)}`, () => [
+                stop(0, theme.tint(hue, 60, 0.7)),
+                stop(0.42, theme.tint(hue, 52, 0.34)),
+                stop(1, theme.tint(hue, 50, 0))
+            ]);
+            const cx = key.x + key.width / 2;
+            const cy = layout.top;
+            p.alpha = intensity;
+            p.fillRadial(cx - spread, cy - height, spread * 2, height + 10, cx, cy, radius, halo);
         }
-        g.globalAlpha = 1;
     }
 }

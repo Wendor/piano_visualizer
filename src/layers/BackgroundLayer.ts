@@ -1,7 +1,8 @@
 import { BaseLayer, Stage } from "../core/types";
 import type { Scene } from "../core/Scene";
-import { GradientCache } from "../core/gradients";
-import type { Ctx2D } from "../core/surface";
+import { GradientBook, stop } from "../paint/Gradient";
+import { TRANSPARENT } from "../paint/Tint";
+import type { Painter } from "../paint/Painter";
 
 export interface BackgroundOptions {
     /** Насколько высоко от клавиатуры поднимается подсветка фона. */
@@ -15,32 +16,27 @@ export class BackgroundLayer extends BaseLayer {
     readonly title = "Фон";
     readonly toggleable = false;
     private readonly options: BackgroundOptions;
-    // Подсветка у кромки меняется только с размером окна и палитрой, а строить
-    // её заново — работа на каждый кадр за один и тот же результат.
-    private readonly gradients = new GradientCache(8);
+    // Подсветка у кромки меняется только с палитрой, а собирать её заново —
+    // работа на каждый кадр за один и тот же ответ.
+    private readonly gradients = new GradientBook(8);
 
     constructor(options: Partial<BackgroundOptions> = {}) {
         super();
         this.options = { glowFraction: 0.55, ...options };
     }
 
-    override draw(g: Ctx2D, scene: Scene): void {
+    override draw(p: Painter, scene: Scene): void {
         const { width, height } = scene.viewport;
         const { top } = scene.layout;
+        const { theme } = scene;
 
-        g.fillStyle = scene.theme.palette.background;
-        g.fillRect(0, 0, width, height);
+        p.fill(0, 0, width, height, theme.background);
 
         const band = height * this.options.glowFraction;
-        g.fillStyle = this.gradients.get(
-            `${scene.theme.palette.id}|${Math.round(top)}|${Math.round(band)}`,
-            () => {
-                const gradient = g.createLinearGradient(0, top - band, 0, top);
-                gradient.addColorStop(0, "rgba(0, 0, 0, 0)");
-                gradient.addColorStop(1, scene.theme.palette.backgroundGlow);
-                return gradient;
-            }
-        );
-        g.fillRect(0, top - band, width, band);
+        const glow = this.gradients.get(theme.palette.id, () => [
+            stop(0, TRANSPARENT),
+            stop(1, theme.backgroundGlow)
+        ]);
+        p.fillGradient(0, top - band, width, band, glow, "y");
     }
 }

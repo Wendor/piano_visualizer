@@ -1,6 +1,6 @@
 import type { Scene } from "./Scene";
 import type { ParamSpec } from "../settings/types";
-import type { Ctx2D } from "./surface";
+import type { Painter } from "../paint/Painter";
 
 export interface Viewport {
     width: number;
@@ -27,8 +27,11 @@ export const Stage = {
 export type StageValue = (typeof Stage)[keyof typeof Stage] | number;
 
 /**
- * Слой — единица визуализации. Может рисовать в основной холст (`draw`),
- * в буфер свечения (`drawGlow`) или только считать состояние (`update`).
+ * Слой — единица визуализации. Может рисовать на сцену (`draw`), в буфер
+ * свечения (`drawGlow`) или только считать состояние (`update`).
+ *
+ * Рисует он художником, а не холстом: чем именно картина станет пикселями —
+ * процессором или видеочипом — слоя не касается.
  */
 export interface Layer {
     readonly id: string;
@@ -49,8 +52,8 @@ export interface Layer {
     init?(scene: Scene): void;
     resize?(scene: Scene): void;
     update?(scene: Scene, dt: number): void;
-    drawGlow?(g: Ctx2D, scene: Scene): void;
-    draw?(g: Ctx2D, scene: Scene): void;
+    drawGlow?(p: Painter, scene: Scene): void;
+    draw?(p: Painter, scene: Scene): void;
     dispose?(): void;
 }
 
@@ -67,7 +70,7 @@ export abstract class BaseLayer implements Layer {
     init(_scene: Scene): void {}
     resize(_scene: Scene): void {}
     update(_scene: Scene, _dt: number): void {}
-    drawGlow(_g: Ctx2D, _scene: Scene): void {}
-    draw(_g: Ctx2D, _scene: Scene): void {}
+    drawGlow(_p: Painter, _scene: Scene): void {}
+    draw(_p: Painter, _scene: Scene): void {}
     dispose(): void {}
 }
