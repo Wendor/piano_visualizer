@@ -34,7 +34,12 @@ function groupOf(layer: Layer): ParamGroup {
 
 const send = (message: FromRenderer): void => self.postMessage(message);
 
-function start(canvas: OffscreenCanvas, first: WindowSize, settings: Record<string, unknown>): void {
+function start(
+    canvas: OffscreenCanvas,
+    first: WindowSize,
+    settings: Record<string, unknown>,
+    off: readonly string[]
+): void {
     size = first;
     registerBuiltinLayers();
 
@@ -62,6 +67,10 @@ function start(canvas: OffscreenCanvas, first: WindowSize, settings: Record<stri
             registry.set(id, value);
         }
     }
+
+    // Выключенные с замера слои: их нет в настройках — ни клавиатуру, ни ноты
+    // руками не отключить, а узнать их цену иначе нечем.
+    for (const id of off) view.toggleLayer(id, false);
 
     view.onLayerFault((layer, error) => {
         send({
@@ -101,7 +110,7 @@ function report(): void {
 self.onmessage = (event: MessageEvent<ToRenderer>): void => {
     const message = event.data;
     if (message.type === "start") {
-        start(message.canvas, message.size, message.settings);
+        start(message.canvas, message.size, message.settings, message.off);
         return;
     }
 

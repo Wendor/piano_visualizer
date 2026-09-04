@@ -31,7 +31,14 @@ export interface RenderStats {
  * главном потоке, где живёт звук. Рисующая копия сцены их только показывает.
  */
 export type ToRenderer =
-    | { type: "start"; canvas: OffscreenCanvas; size: WindowSize; settings: Record<string, ParamValue> }
+    | {
+          type: "start";
+          canvas: OffscreenCanvas;
+          size: WindowSize;
+          settings: Record<string, ParamValue>;
+          /** Слои, которые не надо включать: список из адресной строки. */
+          off: readonly string[];
+      }
     | { type: "size"; size: WindowSize }
     | { type: "noteOn"; midi: number; velocity: number }
     | { type: "noteOff"; midi: number }

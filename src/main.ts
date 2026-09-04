@@ -85,19 +85,29 @@ const director = new NotesDirector(visualizer, scene.playback);
 settingsStore.addOwner("notes.direction", () => director.params());
 
 persistence.load();
-persistence.start();
 
-// Флаги из адреса — после загрузки настроек: с пульта их вводят затем,
-// чтобы посмотреть на конкретный случай, а не чтобы поменять сохранённое.
+// Флаги из адреса — после загрузки настроек и до подписки на сохранение: с
+// пульта их вводят затем, чтобы посмотреть на конкретный случай, а не чтобы
+// поменять сохранённое. Иначе опыт «а как оно без свечения» возвращался бы
+// при каждом следующем запуске, и объяснить это было бы нечем.
 if (debugFlags.quality) visualizer.quality.setMode(debugFlags.quality);
 if (debugFlags.profile !== undefined) fpsMeter.setProfiling(debugFlags.profile);
 
+// Выключить с замера можно и то, чего нет в панели: узнать цену клавиатуры
+// или самих нот иначе нечем, а выключателя у них нет — без них сцена теряет
+// смысл. Поэтому список идёт мимо настроек: двойнику здесь, рисующему —
+// сообщением при запуске.
+const off = debugFlags.off ?? [];
+const unknownLayers = off.filter((id) => !visualizer.layer(id));
+for (const id of off) visualizer.toggleLayer(id, false);
+const rejectedSettings = applyOverrides(settingsStore, debugFlags.set ?? []);
+
+persistence.start();
+
 const hud = new Hud(hudRoot);
 
-// Выключение слоёв из адреса — здесь, а не выше: об опечатке в имени надо
-// сказать, иначе человек решит, что слой ничего не стоит, а он просто работал.
-const unknownLayers = (debugFlags.off ?? []).filter((id) => !visualizer.toggleLayer(id, false));
-const rejectedSettings = applyOverrides(settingsStore, debugFlags.set ?? []);
+// Об опечатке надо сказать вслух, иначе человек решит, что слой ничего не
+// стоит, а он всё это время работал.
 const complaints = [...unknownLayers, ...rejectedSettings];
 if (complaints.length > 0) {
     const complaint = `Не понял: ${complaints.join(", ")}`;
@@ -160,7 +170,7 @@ visualizer.createInput("input.demo");
 
 // Рисующий поток заводится последним: к этому времени настройки прочитаны,
 // слои собраны и флаги из адреса применены — ему остаётся всё повторить.
-renderer?.start();
+renderer?.start(off);
 visualizer.start();
 
 // Точка входа для экспериментов из консоли: visualizer.toggleLayer("effects.sparks")

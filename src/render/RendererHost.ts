@@ -59,7 +59,7 @@ export class RendererHost {
     }
 
     /** Отдать холст и рассказать всё, что уже известно. */
-    start(): void {
+    start(off: readonly string[] = []): void {
         const offscreen = this.canvas.transferControlToOffscreen();
         const settings: Record<string, ParamValue> = {};
         for (const entry of this.store.entries()) {
@@ -67,7 +67,7 @@ export class RendererHost {
             if (value !== undefined) settings[entry.id] = value;
         }
 
-        this.post({ type: "start", canvas: offscreen, size: windowSize(), settings }, [offscreen]);
+        this.post({ type: "start", canvas: offscreen, size: windowSize(), settings, off }, [offscreen]);
         // Разбор кадра могли попросить ещё до того, как рисующий поднялся:
         // флаги из адреса читают раньше всего.
         if (this.profiling) this.post({ type: "profile", on: true });
