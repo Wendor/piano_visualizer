@@ -281,3 +281,41 @@ suite("короткие ноты", () => {
         expect(sink.calls).not.toContain("on:72:100");
     });
 });
+
+suite("отражение чужого воспроизведения", () => {
+    it("принимает партитуру, не трогая звучащее", () => {
+        const playback = new Playback();
+        const sink = new Sink();
+
+        playback.mirror({ score });
+
+        expect(playback.loaded).toBe(true);
+        expect(playback.transport.duration).toBeGreaterThan(0);
+        // Ноты приходят снаружи обычными noteOn: собирать их заново незачем.
+        expect(sink.calls).toEqual([]);
+    });
+
+    it("время идёт снаружи", () => {
+        const playback = new Playback();
+        playback.mirror({ score, time: 2.5 });
+        expect(playback.time).toBe(2.5);
+    });
+
+    it("выключенные партии перечисляются целиком", () => {
+        const playback = new Playback();
+        playback.mirror({ score, muted: [1] });
+        expect(playback.partEnabled(0)).toBe(true);
+        expect(playback.partEnabled(1)).toBe(false);
+
+        playback.mirror({ muted: [] });
+        expect(playback.partEnabled(1)).toBe(true);
+    });
+
+    it("сообщает о новой партитуре — по ней перестраиваются слои", () => {
+        const playback = new Playback();
+        let seen = 0;
+        playback.events.on("score", () => seen++);
+        playback.mirror({ score });
+        expect(seen).toBe(1);
+    });
+});

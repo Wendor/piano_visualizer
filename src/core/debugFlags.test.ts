@@ -77,3 +77,17 @@ describe("parseDebugFlags", () => {
         expect(parseDebugFlags("?set=")).toEqual({});
     });
 });
+
+describe("рисующий поток", () => {
+    it("по умолчанию о нём не сказано ничего", () => {
+        expect(parseDebugFlags("?profile=1").worker).toBeUndefined();
+    });
+
+    it("worker=0 просит рисовать прямо в окне", () => {
+        expect(parseDebugFlags("?worker=0").worker).toBe(false);
+    });
+
+    it("флаг без значения — это «включить»", () => {
+        expect(parseDebugFlags("?worker").worker).toBe(true);
+    });
+});

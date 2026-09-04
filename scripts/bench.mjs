@@ -80,10 +80,20 @@ class Session {
         return new Session(socket);
     }
 
-    send(method, params = {}) {
+    send(method, params = {}, sessionId) {
         const id = this.nextId++;
-        this.socket.send(JSON.stringify({ id, method, params }));
+        this.socket.send(JSON.stringify({ id, method, params, sessionId }));
         return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+    }
+
+    /**
+     * Замедлить процессор страницы. Рабочий поток так не замедлить: протокол
+     * отвечает «только для страниц», — поэтому сцену, которую рисует он,
+     * меряют без замедления, а слабую машину изображают отключённым
+     * ускорением холста.
+     */
+    async throttle(rate) {
+        await this.send("Emulation.setCPUThrottlingRate", { rate });
     }
 
     async evaluate(expression) {
@@ -169,9 +179,9 @@ class BidiSession {
         throw new Error("Firefox не открыл порт BiDi");
     }
 
-    send(method, params = {}) {
+    send(method, params = {}, sessionId) {
         const id = this.nextId++;
-        this.socket.send(JSON.stringify({ id, method, params }));
+        this.socket.send(JSON.stringify({ id, method, params, sessionId }));
         return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
     }
 
@@ -277,6 +287,9 @@ JSON.stringify((() => {
   const f = (window.__frames || []).slice().sort((a, b) => a - b);
   const at = (q) => f.length ? +f[Math.min(f.length - 1, Math.floor(f.length * q))].toFixed(1) : 0;
   const sampler = window.sampler || {};
+  // Сцену рисует рабочий поток: кадры считает он, а не наш requestAnimationFrame —
+  // главный поток теперь свободен и отсчитывает ровные 60 независимо от картинки.
+  const remote = window.renderer ? window.renderer.stats() : null;
   return {
     sound: {
       context: sampler.ctx ? sampler.ctx.state : "нет",
@@ -284,14 +297,16 @@ JSON.stringify((() => {
     },
     probe: window.__probe || null,
     long: (window.__long || []).slice().sort((a, b) => b - a).slice(0, 5),
-    worst: at(0.99),
-    p95: at(0.95),
-    stalls: f.filter((ms) => ms > 32).length,
-    fps: +v.quality.fps.toFixed(1),
-    work: +v.quality.work.toFixed(2),
-    level: v.quality.level,
-    canvas: v.canvas.width + "×" + v.canvas.height,
-    rows: v.profiler.rows().map(r => [r.label, +r.ms.toFixed(2)])
+    worst: remote ? +remote.worst.toFixed(1) : at(0.99),
+    p95: remote ? 0 : at(0.95),
+    stalls: remote ? remote.stalls : f.filter((ms) => ms > 32).length,
+    fps: +(remote ? remote.fps : v.quality.fps).toFixed(1),
+    work: +(remote ? remote.work : v.quality.work).toFixed(2),
+    level: remote ? remote.title : v.quality.level,
+    canvas: remote ? remote.width + "×" + remote.height : v.canvas.width + "×" + v.canvas.height,
+    rows: remote
+      ? remote.rows.map(([label, ms]) => [label, +ms.toFixed(2)])
+      : v.profiler.rows().map(r => [r.label, +r.ms.toFixed(2)])
   };
 })())`;
 
@@ -302,7 +317,7 @@ async function shoot(session, path) {
     console.log(`   снимок: ${path}`);
 }
 
-async function runCase(session, url, spec, seconds) {
+async function runCase(session, url, spec, seconds, cpu = 1) {
     // «запрос | код» — код выполняется на готовой сцене. Так можно отключить
     // отдельную фазу слоя, не заводя ради опыта настройку в самом приложении.
     // Делим по первому разделителю: сам код почти наверняка содержит «|».
@@ -312,13 +327,17 @@ async function runCase(session, url, spec, seconds) {
     const full = `${url}/?profile=1&${query}`;
     await session.navigate(full);
     await sleep(2500);
+    if (cpu > 1) await session.throttle(cpu);
     // Патч раньше жеста: иначе звук успеет проснуться до того, как опыт
     // что-либо изменит, и мерить будет нечего.
     if (patch) await session.evaluate(`(() => { const v = window.visualizer; ${patch}; return "ok"; })()`);
     await session.gesture();
     await session.evaluate(PLAY);
+    // Где рисуется сцена, видно только со страницы — и это меняет смысл цифр:
+    // замедление процессора рабочего потока не касается.
+    const inWorker = Boolean(await session.evaluate("Boolean(window.renderer)"));
     await sleep(seconds * 1000);
-    return JSON.parse(await session.evaluate(COLLECT));
+    return { ...JSON.parse(await session.evaluate(COLLECT)), inWorker };
 }
 
 async function main() {
@@ -382,7 +401,6 @@ async function main() {
             // холодным и тёплым запуском, а не тем, что мы меряем.
             await session.send("Network.enable");
             await session.send("Network.setCacheDisabled", { cacheDisabled: true });
-            if (options.cpu > 1) await session.send("Emulation.setCPUThrottlingRate", { rate: options.cpu });
         }
 
         // Замедлять процессор умеет только протокол Chrome; в Firefox сравниваем
@@ -397,13 +415,26 @@ async function main() {
         console.log(`${firefox ? "Firefox" : "Chrome"}: ускорение ${accel}${slowdown}`);
         const results = [];
         for (const spec of options.cases) {
-            const result = await runCase(session, options.url, spec, options.seconds);
+            const result = await runCase(
+                session,
+                options.url,
+                spec,
+                options.seconds,
+                firefox ? 1 : options.cpu
+            );
             const query = spec;
             results.push({ query, result, label: label(query) });
             console.log(`\n── ${label(query)}`);
             console.log(
                 `   ${result.fps} к/с · ${result.work} мс · ${result.level} · холст ${result.canvas}`
             );
+            if (result.inWorker) {
+                // Замедлять рабочий поток протокол не умеет: «только для
+                // страниц». Молчать об этом нельзя — иначе цифры примут за
+                // слабую машину, а это полная скорость.
+                const slow = !firefox && options.cpu > 1 ? " · замедление его не касается" : "";
+                console.log(`   сцену рисует рабочий поток${slow}`);
+            }
             console.log(
                 `   худший кадр ${result.worst} мс · 95% ниже ${result.p95} мс · рывков ${result.stalls}`
             );

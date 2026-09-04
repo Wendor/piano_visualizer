@@ -14,6 +14,11 @@ export interface DebugFlags {
      */
     off?: string[];
     /**
+     * Рисовать в рабочем потоке или прямо в окне. Обычно первое; второе
+     * нужно, чтобы сравнить одно с другим на замере.
+     */
+    worker?: boolean;
+    /**
      * Подмена настроек: пары «идентификатор — значение как написано».
      * Значение остаётся строкой: какого оно типа, знает только описание
      * параметра, а оно живёт в реестре настроек.
@@ -37,6 +42,11 @@ export function parseDebugFlags(search: string): DebugFlags {
         // Флаг без значения — это «включить»: с пульта каждый символ дорог.
         const value = query.get("profile") ?? "";
         flags.profile = value !== "0" && value !== "false";
+    }
+
+    if (query.has("worker")) {
+        const value = query.get("worker") ?? "";
+        flags.worker = value !== "0" && value !== "false";
     }
 
     const quality = query.get("quality");

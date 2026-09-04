@@ -1,12 +1,15 @@
 import { Sampler } from "./audio/Sampler";
 import { parseDebugFlags } from "./core/debugFlags";
+import { createSurface } from "./core/surface";
 import { Visualizer } from "./core/Visualizer";
+import { RendererHost } from "./render/RendererHost";
 import type { Layer } from "./core/types";
 import { DEFAULT_STACK, registerBuiltinLayers } from "./layers";
 import { noteStyle } from "./layers/notes/style";
 import { NotesDirector } from "./layers/notes/NotesDirector";
 import { registerBuiltinInputs } from "./input";
 import type { MidiInput } from "./input/MidiInput";
+import { PointerInput } from "./input/PointerInput";
 import { parseMidiFile } from "./score/smf";
 import { SettingsStore } from "./settings/SettingsStore";
 import { SettingsPersistence } from "./settings/persistence";
@@ -16,7 +19,7 @@ import type { ParamGroup } from "./settings/types";
 import { Controls } from "./ui/Controls";
 import { FileDrop } from "./ui/FileDrop";
 import { Hud } from "./ui/Hud";
-import { FpsMeter } from "./ui/FpsMeter";
+import { FpsMeter, localStats } from "./ui/FpsMeter";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TransportBar } from "./ui/TransportBar";
 import { notesWord } from "./ui/text";
@@ -30,7 +33,21 @@ if (!(canvas instanceof HTMLCanvasElement) || !hudRoot) {
 registerBuiltinLayers();
 registerBuiltinInputs();
 
-const visualizer = new Visualizer({ canvas });
+const debugFlags = parseDebugFlags(window.location.search);
+/**
+ * Рисовать сцену в рабочем потоке, если браузер умеет отдать ему холст.
+ * Кадр на слабой машине занимает двести миллисекунд, и всё это время нажатая
+ * клавиша ждала бы своей очереди: в главном потоке остаются ввод, звук и
+ * разметка, а картину собирает другой.
+ */
+const inWorker = RendererHost.supported && debugFlags.worker !== false;
+
+// Двойник держит сцену, слои и их настройки: с ним работают ввод, звук и
+// панель. Холст ему не нужен — картину собирает рабочий поток.
+const visualizer = new Visualizer({
+    canvas: inWorker ? createSurface() : canvas,
+    paints: !inWorker
+});
 const scene = visualizer.scene;
 
 /** Куда в панели попадёт переключатель слоя. */
@@ -42,7 +59,8 @@ function groupOf(layer: Layer): ParamGroup {
 
 const settingsStore = new SettingsStore();
 const persistence = new SettingsPersistence(settingsStore);
-const fpsMeter = new FpsMeter(visualizer);
+const renderer = inWorker ? new RendererHost(canvas, visualizer, settingsStore) : null;
+const fpsMeter = new FpsMeter(renderer ?? localStats(visualizer));
 
 // Порядок владельцев задаёт порядок строк внутри группы: качество должно
 // стоять раньше «Сбросить всё», иначе оно окажется в хвосте панели.
@@ -71,7 +89,6 @@ persistence.start();
 
 // Флаги из адреса — после загрузки настроек: с пульта их вводят затем,
 // чтобы посмотреть на конкретный случай, а не чтобы поменять сохранённое.
-const debugFlags = parseDebugFlags(window.location.search);
 if (debugFlags.quality) visualizer.quality.setMode(debugFlags.quality);
 if (debugFlags.profile !== undefined) fpsMeter.setProfiling(debugFlags.profile);
 
@@ -96,6 +113,10 @@ visualizer.onLayerFault((layer, error) => {
     const reason = error instanceof Error ? error.message : String(error);
     hud.flash(`Слой «${layer.title ?? layer.id}» отключён: ${reason}`, 4);
     console.error(`Слой ${layer.id} отключён`, error);
+});
+renderer?.onFault((title, message) => {
+    hud.flash(`Слой «${title}» отключён: ${message}`, 4);
+    console.error(`Слой ${title} отключён`, message);
 });
 
 // Звук идёт от сцены, а не от источника ввода: так звучат и живая игра,
@@ -132,9 +153,14 @@ hud.fileLink?.addEventListener("click", () => fileDrop.open());
 const midi = visualizer.createInput("input.midi") as MidiInput;
 midi.onStatus((status) => hud.setMidiStatus(status));
 visualizer.createInput("input.computerKeyboard");
-visualizer.createInput("input.pointer");
+// Указателю нужен холст страницы: у двойника его нет, а события мыши
+// приходят именно сюда.
+visualizer.addInput(new PointerInput(canvas));
 visualizer.createInput("input.demo");
 
+// Рисующий поток заводится последним: к этому времени настройки прочитаны,
+// слои собраны и флаги из адреса применены — ему остаётся всё повторить.
+renderer?.start();
 visualizer.start();
 
 // Точка входа для экспериментов из консоли: visualizer.toggleLayer("effects.sparks")
@@ -143,10 +169,13 @@ declare global {
         visualizer: Visualizer;
         settings: SettingsStore;
         sampler: Sampler;
+        /** Мост к рисующему потоку; в окне рисует сам visualizer, и его нет. */
+        renderer: RendererHost | null;
     }
 }
 window.visualizer = visualizer;
 window.settings = settingsStore;
 window.sampler = sampler;
+window.renderer = renderer;
 
 void controls;

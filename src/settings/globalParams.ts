@@ -11,6 +11,34 @@ export function registerGlobalParams(
     visualizer: Visualizer,
     persistence: SettingsPersistence
 ): void {
+    registerSceneParams(store, visualizer);
+
+    store.addOwner("system", () => [
+        {
+            type: "boolean",
+            key: "persist",
+            label: "Сохранять настройки",
+            group: "system",
+            get: () => persistence.enabled,
+            set: (value) => persistence.setEnabled(value)
+        },
+        {
+            type: "action",
+            key: "reset",
+            label: "Сбросить всё",
+            group: "system",
+            hint: "↵",
+            run: () => store.reset()
+        }
+    ]);
+}
+
+/**
+ * Настройки самой сцены: палитра и геометрия клавиатуры. Их знает и рисующая
+ * копия в рабочем потоке — в отличие от системных, которым нужен `localStorage`
+ * и панель.
+ */
+export function registerSceneParams(store: SettingsStore, visualizer: Visualizer): void {
     const scene = visualizer.scene;
 
     store.addOwner("theme", () => [
@@ -88,23 +116,4 @@ export function registerGlobalParams(
         ];
         return specs;
     });
-
-    store.addOwner("system", () => [
-        {
-            type: "boolean",
-            key: "persist",
-            label: "Сохранять настройки",
-            group: "system",
-            get: () => persistence.enabled,
-            set: (value) => persistence.setEnabled(value)
-        },
-        {
-            type: "action",
-            key: "reset",
-            label: "Сбросить всё",
-            group: "system",
-            hint: "↵",
-            run: () => store.reset()
-        }
-    ]);
 }

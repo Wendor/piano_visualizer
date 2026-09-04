@@ -95,6 +95,25 @@ export class Playback {
         this.events.emit("score", { score: null });
     }
 
+    /**
+     * Отражение чужого воспроизведения: партитуру, время и выключенные партии
+     * сообщают снаружи, а ноты приходят обычными `noteOn` и `noteOff`. Так
+     * рисующая копия сцены живёт в рабочем потоке, не ведя звук сама и не
+     * пересобирая то, что уже собрано в главном.
+     */
+    mirror(state: { score?: Score | null; time?: number; muted?: readonly number[] }): void {
+        if (state.score !== undefined) {
+            this.score = state.score;
+            this.transport.duration = state.score?.duration ?? 0;
+            this.events.emit("score", { score: state.score });
+        }
+        if (state.time !== undefined) this.transport.time = state.time;
+        if (state.muted) {
+            this.muted.clear();
+            for (const part of state.muted) this.muted.add(part);
+        }
+    }
+
     /** Перемотка: гасим звучащее и собираем состояние заново. */
     seek(time: number, sink: NoteSink): void {
         this.transport.seek(time);

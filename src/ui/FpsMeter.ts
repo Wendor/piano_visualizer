@@ -1,7 +1,38 @@
 import { LongTasks } from "../core/LongTasks";
 import type { Visualizer } from "../core/Visualizer";
+import type { RenderStats } from "../render/protocol";
 import type { ParamSpec } from "../settings/types";
 import { profileLines } from "./profile";
+
+/**
+ * Откуда счётчик берёт цифры. Сцена рисует то в окне, то в рабочем потоке, и
+ * во втором случае сводка приходит сообщением — счётчику это безразлично.
+ */
+export interface StatsSource {
+    stats(): RenderStats;
+    setProfiling(on: boolean): void;
+}
+
+/** Сводка от визуализатора, который рисует прямо здесь. */
+export function localStats(visualizer: Visualizer): StatsSource {
+    return {
+        stats: () => {
+            const { quality, profiler, canvas } = visualizer;
+            return {
+                fps: quality.fps,
+                work: quality.work,
+                title: quality.title,
+                stalls: quality.smoothness.stalls,
+                worst: quality.smoothness.worst,
+                width: canvas.width,
+                height: canvas.height,
+                profiling: profiler.active,
+                rows: profiler.rows().map((row) => [row.label, row.ms] as [string, number])
+            };
+        },
+        setProfiling: (on) => visualizer.profiler.setEnabled(on)
+    };
+}
 
 /**
  * Счётчик кадров и замер по слоям. Читает усреднённую оценку из ступени
@@ -16,8 +47,9 @@ export class FpsMeter {
     private readonly blocks = new LongTasks();
     private timer = 0;
     private shown = false;
+    private profiling = false;
 
-    constructor(private readonly visualizer: Visualizer) {
+    constructor(private readonly source: StatsSource) {
         this.root.className = "fps";
         this.root.hidden = true;
         document.body.appendChild(this.root);
@@ -43,7 +75,8 @@ export class FpsMeter {
     /** Разбор кадра по слоям: сам счётчик при этом включается. */
     setProfiling(on: boolean): void {
         if (on && !this.shown) this.setVisible(true);
-        this.visualizer.profiler.setEnabled(on);
+        this.profiling = on;
+        this.source.setProfiling(on);
         if (this.shown) this.update();
     }
 
@@ -62,7 +95,7 @@ export class FpsMeter {
                 key: "profile",
                 label: "Разбор кадра",
                 group: "system",
-                get: () => this.visualizer.profiler.active,
+                get: () => this.profiling,
                 set: (value) => this.setProfiling(value)
             }
         ];
@@ -75,14 +108,13 @@ export class FpsMeter {
     }
 
     private update(): void {
-        const { quality, profiler, canvas } = this.visualizer;
-        const { smoothness } = quality;
-        const lines = [`${Math.round(quality.fps)} к/с · ${quality.work.toFixed(1)} мс · ${quality.title}`];
+        const stats = this.source.stats();
+        const lines = [`${Math.round(stats.fps)} к/с · ${stats.work.toFixed(1)} мс · ${stats.title}`];
 
         // Кадров в секунду мало для суждения: при рваном ходе их бывает даже
         // больше обычного, а картинка дёргается. Рывки об этом и говорят.
-        if (smoothness.stalls > 0) {
-            lines.push(`рывков ${smoothness.stalls} · худший ${smoothness.worst.toFixed(0)} мс`);
+        if (stats.stalls > 0) {
+            lines.push(`рывков ${stats.stalls} · худший ${stats.worst.toFixed(0)} мс`);
         }
 
         // Разовое замирание рывками не описать: через секунду ход снова ровный,
@@ -92,11 +124,11 @@ export class FpsMeter {
             lines.push(`блокировок ${this.blocks.count} · до ${this.blocks.worst.toFixed(0)} мс`);
         }
 
-        if (profiler.active) {
+        if (stats.profiling) {
             // Размер холста — первое, что стоит увидеть на большом экране:
             // телевизор на 4K просит вчетверо больше пикселей, чем ноутбук.
-            lines.push(`холст ${canvas.width}×${canvas.height}`);
-            lines.push(...profileLines(profiler.rows()));
+            lines.push(`холст ${stats.width}×${stats.height}`);
+            lines.push(...profileLines(stats.rows.map(([label, ms]) => ({ label, ms }))));
         }
 
         this.root.textContent = "";

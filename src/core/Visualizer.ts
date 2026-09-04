@@ -4,10 +4,12 @@ import { GlowBuffer } from "./GlowBuffer";
 import { paintStack, updateStack, wantsGlow } from "./paint";
 import { Quality } from "./Quality";
 import { layerRegistry, inputRegistry } from "./registry";
-import { coalesce } from "./schedule";
+import { askFrame, coalesce, dropFrame } from "./schedule";
 import { Scene } from "./Scene";
 import type { LayerFault } from "./paint";
 import type { Layer } from "./types";
+import { context2d } from "./surface";
+import type { Ctx2D, Surface } from "./surface";
 import { canvasSize, resolveViewport } from "./viewport";
 import type { InputSource } from "../input/types";
 
@@ -21,11 +23,31 @@ const GLOW_HZ = 40;
 /** Слой добавлен (`added = true`) или удалён. */
 export type LayerHook = (layer: Layer, added: boolean) => void;
 
+/** Откуда сцена узнаёт размер окна. В рабочем потоке его сообщают снаружи. */
+export type ViewportSource = () => { width: number; height: number; devicePixelRatio: number };
+
+const windowViewport: ViewportSource = () => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio || 1
+});
+
 export interface VisualizerOptions {
-    canvas: HTMLCanvasElement;
+    canvas: Surface;
     /** Потолок devicePixelRatio: 2 хватает и на Retina. */
     maxDpr?: number;
     glowScale?: number;
+    /**
+     * Размер окна. По умолчанию — само окно; в рабочем потоке окна нет, и его
+     * размер приходит сообщением, как и всё остальное.
+     */
+    viewport?: ViewportSource;
+    /**
+     * Рисовать ли. Когда картину собирает рабочий поток, в главном остаётся
+     * двойник: он держит сцену, слои и их настройки — ввод, звук и панель
+     * настроек работают с ним, — но холста не касается.
+     */
+    paints?: boolean;
 }
 
 /**
@@ -34,8 +56,8 @@ export interface VisualizerOptions {
  */
 export class Visualizer {
     readonly scene = new Scene();
-    readonly canvas: HTMLCanvasElement;
-    readonly ctx: CanvasRenderingContext2D;
+    readonly canvas: Surface;
+    readonly ctx: Ctx2D;
     readonly glow: GlowBuffer;
     /** Ступень качества: она же решает, в каком разрешении рисовать. */
     readonly quality = new Quality();
@@ -45,10 +67,13 @@ export class Visualizer {
     private readonly layerList: Layer[] = [];
     private readonly inputList: InputSource[] = [];
     private readonly maxDpr: number;
+    private readonly viewportOf: ViewportSource;
+    private readonly paints: boolean;
     private frame = 0;
     private lastTime = 0;
     private running = false;
     private readonly layerHooks = new Set<LayerHook>();
+    private readonly frameHooks = new Set<(dt: number) => void>();
     private readonly faultHooks = new Set<LayerFault>();
     // Событий resize приходит поток, а перестройка холста и кэшей дорогая:
     // на кадр хватает одной.
@@ -58,10 +83,10 @@ export class Visualizer {
 
     constructor(options: VisualizerOptions) {
         this.canvas = options.canvas;
-        const ctx = this.canvas.getContext("2d");
-        if (!ctx) throw new Error("2D-контекст недоступен");
-        this.ctx = ctx;
+        this.ctx = context2d(this.canvas, "сцена");
         this.maxDpr = options.maxDpr ?? 2;
+        this.viewportOf = options.viewport ?? windowViewport;
+        this.paints = options.paints ?? true;
         this.glow = new GlowBuffer(options.glowScale ?? this.quality.profile.glowScale);
         this.quality.events.on("change", () => this.resize());
     }
@@ -84,6 +109,16 @@ export class Visualizer {
     onLayerChange(hook: LayerHook): () => void {
         this.layerHooks.add(hook);
         return () => this.layerHooks.delete(hook);
+    }
+
+    /**
+     * Уведомление о прошедшем кадре. Нужно тем, кто идёт в ногу со сценой, но
+     * своего цикла заводить не хочет: второй цикл кадров в том же потоке —
+     * лишний повод для рассинхрона.
+     */
+    onFrame(hook: (dt: number) => void): () => void {
+        this.frameHooks.add(hook);
+        return () => this.frameHooks.delete(hook);
     }
 
     /**
@@ -163,17 +198,19 @@ export class Visualizer {
     start(): this {
         if (this.running) return this;
         this.running = true;
-        window.addEventListener("resize", this.onResize);
+        // Окно само сообщает о своём размере; в рабочем потоке о нём говорят
+        // снаружи вызовом `resize`.
+        if (typeof window !== "undefined") window.addEventListener("resize", this.onResize);
         this.resize();
         this.lastTime = performance.now();
-        this.frame = requestAnimationFrame(this.tick);
+        this.frame = askFrame(this.tick);
         return this;
     }
 
     stop(): void {
         this.running = false;
-        cancelAnimationFrame(this.frame);
-        window.removeEventListener("resize", this.onResize);
+        dropFrame(this.frame);
+        if (typeof window !== "undefined") window.removeEventListener("resize", this.onResize);
     }
 
     dispose(): void {
@@ -188,28 +225,37 @@ export class Visualizer {
         const { renderScale, glowScale, maxPixels } = this.quality.profile;
         // Холст меньше экрана, а CSS-размер прежний: браузер растянет картинку
         // при выводе — это самый дешёвый способ вернуть кадр в бюджет.
+        const outer = this.viewportOf();
         const viewport = resolveViewport({
-            width: window.innerWidth,
-            height: window.innerHeight,
-            devicePixelRatio: window.devicePixelRatio || 1,
+            width: outer.width,
+            height: outer.height,
+            devicePixelRatio: outer.devicePixelRatio,
             maxDpr: this.maxDpr,
             renderScale,
             maxPixels
         });
-        const size = canvasSize(viewport);
         this.glow.setScale(glowScale);
+        this.scene.resize(viewport);
+        // Двойнику холст не нужен: он живёт ради сцены и настроек. Слоям тоже
+        // незачем перестраивать кэши картинки, которую никто не увидит.
+        if (!this.paints) return;
 
+        const size = canvasSize(viewport);
         this.canvas.width = size.width;
         this.canvas.height = size.height;
-        this.canvas.style.width = `${viewport.width}px`;
-        this.canvas.style.height = `${viewport.height}px`;
+        // Растяжение до размера окна — дело разметки, и стиль есть только у
+        // холста страницы: в рабочем потоке холст голый, а размером на экране
+        // распоряжается тот, кто им владеет.
+        if ("style" in this.canvas) {
+            this.canvas.style.width = `${viewport.width}px`;
+            this.canvas.style.height = `${viewport.height}px`;
+        }
         this.ctx.setTransform(viewport.dpr, 0, 0, viewport.dpr, 0, 0);
 
         this.glow.resize(viewport);
         // Буфер только что очищен пересозданием холста: ждать своей очереди
         // ему нельзя, иначе кадр выйдет без свечения вовсе.
         this.glowClock.force();
-        this.scene.resize(viewport);
         for (const layer of this.layerList) layer.resize?.(this.scene);
     }
 
@@ -224,10 +270,13 @@ export class Visualizer {
 
         const started = performance.now();
         this.scene.advance(dt);
-        this.render(dt);
-        this.quality.sample(performance.now() - started, frameMs);
-        this.profiler.endFrame();
-        if (this.running) this.frame = requestAnimationFrame(this.tick);
+        for (const hook of this.frameHooks) hook(dt);
+        if (this.paints) {
+            this.render(dt);
+            this.quality.sample(performance.now() - started, frameMs);
+            this.profiler.endFrame();
+        }
+        if (this.running) this.frame = askFrame(this.tick);
     };
 
     /**
