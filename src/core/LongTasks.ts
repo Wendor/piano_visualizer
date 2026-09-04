@@ -33,7 +33,12 @@ export class LongTasks {
     private readonly stop: (() => void) | null;
 
     constructor(source: TaskSource = browserTasks) {
-        this.stop = source((ms, at) => this.seen.push({ ms, at }));
+        this.stop = source((ms, at) => {
+            this.seen.push({ ms, at });
+            // Чистим на приходе, а не на чтении: счётчик бывает выключен
+            // часами, и список рос бы всё это время.
+            this.forget(at);
+        });
     }
 
     /** Сколько блокировок за окно памяти. */

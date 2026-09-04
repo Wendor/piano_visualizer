@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "sound:fetch": "node scripts/fetch-sound.mjs"
+    "sound:fetch": "node scripts/fetch-sound.mjs",
+    "bench": "node scripts/bench.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -42,6 +42,13 @@ describe("LongTasks", () => {
         expect(tasks.count).toBe(1);
     });
 
+    it("не копит, пока на него не смотрят", () => {
+        // Счётчик выключен, а блокировки идут: помнить надо всё то же окно.
+        const { tasks, report } = fake();
+        for (let i = 0; i < 100; i++) report(50, 1000 + i * 1000);
+        expect(tasks.count).toBe(10);
+    });
+
     it("отписывается", () => {
         let stopped = false;
         const tasks = new LongTasks(() => () => {
