@@ -38,6 +38,58 @@ export interface NoteBar {
     readonly seed: number;
 }
 
+/** Полоса, которую слой заполняет на месте: та же `NoteBar`, только изменяемая. */
+type Slot = { -readonly [K in keyof NoteBar]: NoteBar[K] };
+
+/**
+ * Полосы кадра. Нот на экране сотня, кадров в секунде шестьдесят — рождать на
+ * каждую по объекту значит отдавать сборщику мусора тысячи штук в секунду, а
+ * платит он за это рывками в самый неподходящий момент. Полосы живут между
+ * кадрами: слой лишь сбрасывает счётчик и заполняет их заново.
+ */
+export class NoteBars {
+    private readonly items: Slot[] = [];
+    private used = 0;
+
+    get length(): number {
+        return this.used;
+    }
+
+    /** Начать кадр заново. Сами полосы остаются — их и переиспользуем. */
+    clear(): void {
+        this.used = 0;
+    }
+
+    /** Очередная полоса под запись. Поля слой задаёт целиком, все до одного. */
+    take(): Slot {
+        const found = this.items[this.used];
+        if (found) {
+            this.used++;
+            return found;
+        }
+        const made: Slot = {
+            x: 0,
+            width: 0,
+            top: 0,
+            height: 0,
+            hue: 0,
+            velocity: 0,
+            hollow: false,
+            openBottom: false,
+            rising: false,
+            seed: 0
+        };
+        this.items.push(made);
+        this.used++;
+        return made;
+    }
+
+    /** Полоса под номером: обход идёт по индексу, чтобы не рождать итератор. */
+    at(index: number): NoteBar {
+        return this.items[index]!;
+    }
+}
+
 /**
  * Номер ноты → её постоянная доля 0…1. Умножение на золотое сечение разводит
  * соседние номера далеко друг от друга; остаток от деления выстроил бы их

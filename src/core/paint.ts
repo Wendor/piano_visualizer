@@ -9,6 +9,16 @@ export type Brush = "draw" | "drawGlow";
 export type LayerFault = (layer: Layer, error: unknown) => void;
 
 /**
+ * Просит ли кто-нибудь буфер свечения. Пока о нём никто не просит — выключен
+ * блум или его сила на нуле, — наполнять буфер незачем: это половина работы
+ * всех светящихся слоёв, и она уходила бы в никуда.
+ */
+export function wantsGlow(layers: readonly Layer[]): boolean {
+    for (const layer of layers) if (layer.enabled && layer.needsGlow?.()) return true;
+    return false;
+}
+
+/**
  * Обойти слои, изолируя состояние контекста. Слой волен ставить свой режим
  * наложения и прозрачность и не обязан прибираться: следующий начинает с
  * чистого листа. Иначе забытый `lighter` тихо уезжает в чужую отрисовку.

@@ -3,6 +3,16 @@ import type { ParamSpec } from "../../settings/types";
 import type { Scene } from "../../core/Scene";
 import type { Quality } from "../../core/Quality";
 
+/** Чем группа искр отличается в свечении и на экране. */
+interface Look {
+    lightness: number;
+    alpha: number;
+    /** Длина хвоста в долях скорости. */
+    tail: number;
+    /** Толстая линия свечения или тонкая экранная. */
+    wide: boolean;
+}
+
 export interface SparksOptions {
     /** Базовое число искр; к нему добавляется вклад velocity. */
     count: number;
@@ -20,7 +30,20 @@ interface Spark {
     life: number;
     max: number;
     hue: number;
+    /** Доля оставшейся жизни: 1 — только что, 0 — погасла. */
+    k: number;
+    /** Номер группы: искры с одним номером рисуются одной обводкой. */
+    group: number;
 }
+
+/**
+ * На сколько ступеней делим яркость и толщину. Искра живёт полсекунды, за это
+ * время ступень сменится несколько раз — затухание остаётся плавным, а стиль
+ * холста меняется десяток раз за кадр вместо сотни.
+ */
+const SHADES = 6;
+/** Ширина оттеночной корзины, градусов. */
+const HUE_STEP = 12;
 
 /** Искры от удара по клавише. */
 export class SparksLayer extends BaseLayer {
@@ -102,7 +125,9 @@ export class SparksLayer extends BaseLayer {
                 size: 0.5 + Math.random() * 0.8,
                 life: 0,
                 max: 0.45 + Math.random() * 0.75,
-                hue
+                hue,
+                k: 1,
+                group: 0
             });
         }
     }
@@ -120,36 +145,55 @@ export class SparksLayer extends BaseLayer {
             spark.vy += this.options.gravity * dt;
             spark.vx *= 1 - this.options.drag * dt;
             spark.vy *= 1 - 0.5 * dt;
+
+            spark.k = 1 - spark.life / spark.max;
+            const shade = Math.min(SHADES - 1, Math.floor(spark.k * SHADES));
+            const thick = spark.size < 0.9 ? 0 : 1;
+            spark.group = (Math.round(spark.hue / HUE_STEP) * SHADES + shade) * 2 + thick;
         }
+
+        // Искры складываются по яркости, поэтому порядок не виден, — и его можно
+        // отдать под группировку: соседи по списку рисуются одной обводкой.
+        this.sparks.sort(byGroup);
     }
 
     override drawGlow(g: CanvasRenderingContext2D, scene: Scene): void {
-        g.lineCap = "round";
-        for (const spark of this.sparks) {
-            const k = 1 - spark.life / spark.max;
-            g.globalAlpha = k * 0.85;
-            g.strokeStyle = scene.theme.color(spark.hue, 68, 1);
-            g.lineWidth = 1.6 + spark.size * 1.6;
-            g.beginPath();
-            g.moveTo(spark.x, spark.y);
-            g.lineTo(spark.x - spark.vx * 0.014, spark.y - spark.vy * 0.014);
-            g.stroke();
-        }
+        this.paint(g, scene, { lightness: 68, alpha: 0.85, tail: 0.014, wide: true });
         g.globalAlpha = 1;
     }
 
     override draw(g: CanvasRenderingContext2D, scene: Scene): void {
         g.globalCompositeOperation = "lighter";
+        this.paint(g, scene, { lightness: 74, alpha: 0.9, tail: 0.012, wide: false });
+    }
+
+    /**
+     * Одна обводка на группу вместо одной на искру: цвет, прозрачность и
+     * толщина ставятся раз в десяток искр, а не сто раз за кадр. Внутри группы
+     * они одинаковы — на то она и группа.
+     */
+    private paint(g: CanvasRenderingContext2D, scene: Scene, look: Look): void {
+        const sparks = this.sparks;
+        if (sparks.length === 0) return;
         g.lineCap = "round";
-        for (const spark of this.sparks) {
-            const k = 1 - spark.life / spark.max;
-            g.globalAlpha = k * 0.9;
-            g.strokeStyle = scene.theme.color(spark.hue, 74, 1);
-            g.lineWidth = spark.size * (0.7 + k * 0.9);
-            g.beginPath();
+
+        let group = -1;
+        for (let i = 0; i < sparks.length; i++) {
+            const spark = sparks[i]!;
+            if (spark.group !== group) {
+                if (group >= 0) g.stroke();
+                group = spark.group;
+                g.globalAlpha = spark.k * look.alpha;
+                g.strokeStyle = scene.theme.color(spark.hue, look.lightness, 1);
+                g.lineWidth = look.wide ? 1.6 + spark.size * 1.6 : spark.size * (0.7 + spark.k * 0.9);
+                g.beginPath();
+            }
             g.moveTo(spark.x, spark.y);
-            g.lineTo(spark.x - spark.vx * 0.012, spark.y - spark.vy * 0.012);
-            g.stroke();
+            g.lineTo(spark.x - spark.vx * look.tail, spark.y - spark.vy * look.tail);
         }
+        g.stroke();
     }
 }
+
+/** Порядок групп: сравниваем числа, чтобы сортировка не стоила дороже отрисовки. */
+const byGroup = (a: Spark, b: Spark): number => a.group - b.group;

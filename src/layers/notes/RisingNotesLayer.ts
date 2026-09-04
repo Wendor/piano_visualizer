@@ -1,7 +1,6 @@
 import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
-import { NoteStyle, noteStyle, seedOf } from "./style";
-import type { NoteBar } from "./style";
+import { NoteBars, NoteStyle, noteStyle, seedOf } from "./style";
 
 /**
  * Живая игра: нота растёт вверх от клавиши, пока её держат, и после
@@ -14,7 +13,7 @@ export class RisingNotesLayer extends BaseLayer {
     readonly title = "Ноты";
     readonly toggleable = false;
 
-    private bars: NoteBar[] = [];
+    private readonly bars = new NoteBars();
 
     constructor(private readonly style: NoteStyle = noteStyle) {
         super();
@@ -37,7 +36,7 @@ export class RisingNotesLayer extends BaseLayer {
         const { layout, theme, time } = scene;
         const { speed, gap, hollowNaturals } = this.style.options;
         this.style.time = time;
-        const bars: NoteBar[] = [];
+        this.bars.clear();
 
         for (const note of scene.notes) {
             const key = layout.get(note.midi);
@@ -51,28 +50,25 @@ export class RisingNotesLayer extends BaseLayer {
             const height = bottom - top;
             if (height <= 0.5) continue;
 
-            bars.push({
-                x: key.x + inset,
-                width: Math.max(2, key.width - inset * 2),
-                top,
-                height,
-                hue: theme.hueFor(note.midi, layout),
-                velocity: Math.min(1, note.velocity / 110),
-                hollow: hollowNaturals && !note.accidental,
-                openBottom: note.end === null,
-                rising: true,
-                seed: seedOf(note.id)
-            });
+            const bar = this.bars.take();
+            bar.x = key.x + inset;
+            bar.width = Math.max(2, key.width - inset * 2);
+            bar.top = top;
+            bar.height = height;
+            bar.hue = theme.hueFor(note.midi, layout);
+            bar.velocity = Math.min(1, note.velocity / 110);
+            bar.hollow = hollowNaturals && !note.accidental;
+            bar.openBottom = note.end === null;
+            bar.rising = true;
+            bar.seed = seedOf(note.id);
         }
-
-        this.bars = bars;
     }
 
     override drawGlow(g: CanvasRenderingContext2D, scene: Scene): void {
-        for (const bar of this.bars) this.style.drawGlow(g, scene.theme, bar);
+        for (let i = 0; i < this.bars.length; i++) this.style.drawGlow(g, scene.theme, this.bars.at(i));
     }
 
     override draw(g: CanvasRenderingContext2D, scene: Scene): void {
-        for (const bar of this.bars) this.style.draw(g, scene.theme, bar);
+        for (let i = 0; i < this.bars.length; i++) this.style.draw(g, scene.theme, this.bars.at(i));
     }
 }

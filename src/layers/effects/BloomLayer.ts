@@ -102,6 +102,11 @@ export class BloomLayer extends BaseLayer {
         ];
     }
 
+    /** Пока сила на нуле, свечение никому не нужно — и наполнять его незачем. */
+    needsGlow(): boolean {
+        return this.options.strength > 0.01;
+    }
+
     setStrength(value: number): number {
         this.options.strength = clamp(value, 0, 2);
         return this.options.strength;

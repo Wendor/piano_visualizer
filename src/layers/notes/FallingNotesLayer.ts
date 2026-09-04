@@ -2,8 +2,7 @@ import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
 import { isAccidental } from "../../core/layout";
 import { firstNoteAtOrAfter } from "../../score/types";
-import { NoteStyle, noteStyle, seedOf } from "./style";
-import type { NoteBar } from "./style";
+import { NoteBars, NoteStyle, noteStyle, seedOf } from "./style";
 
 /**
  * Воспроизведение файла: нота падает сверху и в свой момент входит в клавишу.
@@ -16,7 +15,7 @@ export class FallingNotesLayer extends BaseLayer {
     readonly title = "Падающие ноты";
     readonly toggleable = false;
 
-    private bars: NoteBar[] = [];
+    private readonly bars = new NoteBars();
 
     constructor(private readonly style: NoteStyle = noteStyle) {
         super();
@@ -25,7 +24,7 @@ export class FallingNotesLayer extends BaseLayer {
     override update(scene: Scene, _dt: number): void {
         const { layout, theme, playback } = scene;
         const score = playback.score;
-        this.bars = [];
+        this.bars.clear();
         if (!score) return;
 
         const { speed, gap, hollowNaturals } = this.style.options;
@@ -51,28 +50,27 @@ export class FallingNotesLayer extends BaseLayer {
             if (height <= 0.5) continue;
 
             const inset = Math.max(1, key.width * gap);
-            this.bars.push({
-                x: key.x + inset,
-                width: Math.max(2, key.width - inset * 2),
-                top,
-                height,
-                hue: theme.hueFor(key.midi, layout),
-                velocity: Math.min(1, note.velocity / 110),
-                hollow: hollowNaturals && !isAccidental(key.midi),
-                openBottom: rawBottom > layout.top,
-                rising: false,
-                // Номер ноты в партитуре постоянен: зерно переживает и кадр,
-                // и перемотку, и выключение партии.
-                seed: seedOf(i)
-            });
+            const bar = this.bars.take();
+            bar.x = key.x + inset;
+            bar.width = Math.max(2, key.width - inset * 2);
+            bar.top = top;
+            bar.height = height;
+            bar.hue = theme.hueFor(key.midi, layout);
+            bar.velocity = Math.min(1, note.velocity / 110);
+            bar.hollow = hollowNaturals && !isAccidental(key.midi);
+            bar.openBottom = rawBottom > layout.top;
+            bar.rising = false;
+            // Номер ноты в партитуре постоянен: зерно переживает и кадр,
+            // и перемотку, и выключение партии.
+            bar.seed = seedOf(i);
         }
     }
 
     override drawGlow(g: CanvasRenderingContext2D, scene: Scene): void {
-        for (const bar of this.bars) this.style.drawGlow(g, scene.theme, bar);
+        for (let i = 0; i < this.bars.length; i++) this.style.drawGlow(g, scene.theme, this.bars.at(i));
     }
 
     override draw(g: CanvasRenderingContext2D, scene: Scene): void {
-        for (const bar of this.bars) this.style.draw(g, scene.theme, bar);
+        for (let i = 0; i < this.bars.length; i++) this.style.draw(g, scene.theme, this.bars.at(i));
     }
 }

@@ -1,7 +1,7 @@
 import { Cadence } from "./Cadence";
 import { FrameProfiler } from "./FrameProfiler";
 import { GlowBuffer } from "./GlowBuffer";
-import { paintStack, updateStack } from "./paint";
+import { paintStack, updateStack, wantsGlow } from "./paint";
 import { Quality } from "./Quality";
 import { layerRegistry, inputRegistry } from "./registry";
 import { coalesce } from "./schedule";
@@ -240,7 +240,9 @@ export class Visualizer {
 
         updateStack(this.layerList, scene, dt, this.onFault, this.profiler);
 
-        if (this.glowClock.due(dt)) {
+        // Свечение рисуют, пока есть кому его показать. Выключенный блум —
+        // это не «сцена без свечения», это сцена, которой незачем его считать.
+        if (wantsGlow(this.layerList) && this.glowClock.due(dt)) {
             const glowCtx = this.glow.begin(scene.viewport);
             paintStack(glowCtx, this.layerList, "drawGlow", scene, this.onFault, this.profiler);
         }

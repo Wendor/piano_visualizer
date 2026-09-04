@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FrameProfiler } from "./FrameProfiler";
-import { paintStack, updateStack } from "./paint";
+import { paintStack, updateStack, wantsGlow } from "./paint";
 import type { Scene } from "./Scene";
 import type { Layer } from "./types";
 
@@ -186,5 +186,30 @@ describe("обход слоёв под замером", () => {
         profiler.endFrame();
 
         expect(profiler.rows()).toEqual([]);
+    });
+});
+
+describe("буфер свечения", () => {
+    it("не нужен, пока о нём никто не просит", () => {
+        const painter = layer("effects.dust", { drawGlow: () => {} });
+        expect(wantsGlow([painter])).toBe(false);
+    });
+
+    it("нужен, если о нём просит включённый слой", () => {
+        const bloom = layer("effects.bloom", { needsGlow: () => true });
+        expect(wantsGlow([layer("dust", {}), bloom])).toBe(true);
+    });
+
+    it("выключенный слой не просит ни о чём", () => {
+        const bloom = layer("effects.bloom", { enabled: false, needsGlow: () => true });
+        expect(wantsGlow([bloom])).toBe(false);
+    });
+
+    it("слой может передумать: сила свечения на нуле", () => {
+        let strength = 1;
+        const bloom = layer("effects.bloom", { needsGlow: () => strength > 0 });
+        expect(wantsGlow([bloom])).toBe(true);
+        strength = 0;
+        expect(wantsGlow([bloom])).toBe(false);
     });
 });
