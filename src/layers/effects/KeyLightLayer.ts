@@ -70,7 +70,9 @@ export class KeyLightLayer extends BaseLayer {
     }
 
     override update(_scene: Scene, dt: number): void {
-        for (const [midi, value] of [...this.flash]) {
+        // Обходим карту как есть: копия ради безопасного удаления — это лишний
+        // массив пар на каждый кадр, а удалять текущий ключ и так можно.
+        for (const [midi, value] of this.flash) {
             const next = value - dt * this.options.decay;
             if (next <= 0) this.flash.delete(midi);
             else this.flash.set(midi, next);

@@ -1,5 +1,6 @@
 import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
+import { GradientCache } from "../../core/gradients";
 import type { ParamSpec } from "../../settings/types";
 
 export interface TopFadeOptions {
@@ -13,6 +14,9 @@ export class TopFadeLayer extends BaseLayer {
     readonly stage = Stage.Atmosphere;
     readonly title = "Затемнение сверху";
     readonly options: TopFadeOptions;
+    // Затемнение зависит только от палитры и высоты полосы: и то и другое
+    // держится кадрами, а разбор цвета и три остановки — работа на каждый.
+    private readonly gradients = new GradientCache(16);
 
     constructor(options: Partial<TopFadeOptions> = {}) {
         super();
@@ -44,11 +48,13 @@ export class TopFadeLayer extends BaseLayer {
         if (height <= 0) return;
 
         const background = scene.theme.palette.background;
-        const gradient = g.createLinearGradient(0, 0, 0, height);
-        gradient.addColorStop(0, background);
-        gradient.addColorStop(0.55, this.fade(background, 0.55));
-        gradient.addColorStop(1, this.fade(background, 0));
-        g.fillStyle = gradient;
+        g.fillStyle = this.gradients.get(`${background}|${Math.round(height)}`, () => {
+            const gradient = g.createLinearGradient(0, 0, 0, height);
+            gradient.addColorStop(0, background);
+            gradient.addColorStop(0.55, this.fade(background, 0.55));
+            gradient.addColorStop(1, this.fade(background, 0));
+            return gradient;
+        });
         g.fillRect(0, 0, scene.viewport.width, height);
     }
 
