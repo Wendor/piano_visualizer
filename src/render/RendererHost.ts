@@ -51,6 +51,11 @@ export class RendererHost {
     ) {
         this.worker = new Worker(new URL("./renderer.ts", import.meta.url), { type: "module" });
         this.worker.onmessage = (event: MessageEvent<FromRenderer>) => this.receive(event.data);
+        // Холст уже отдан, назад его не забрать: если рисующий упал, сцена
+        // молча погаснет — и человек должен узнать об этом от нас, а не гадать.
+        this.worker.onerror = (event) => {
+            this.faultHook?.("Рисующий поток", event.message || "не удалось запустить");
+        };
     }
 
     /** Отдать холст и рассказать всё, что уже известно. */
