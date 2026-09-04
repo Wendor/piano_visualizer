@@ -75,6 +75,7 @@ function start(canvas: OffscreenCanvas, first: WindowSize, settings: Record<stri
     visualizer = view;
     store = registry;
     view.start();
+    send({ type: "viewport", viewport: view.scene.viewport });
 
     reportTimer = setInterval(report, REPORT_MS) as unknown as number;
 }
@@ -112,6 +113,7 @@ self.onmessage = (event: MessageEvent<ToRenderer>): void => {
         case "size":
             size = message.size;
             view.resize();
+            send({ type: "viewport", viewport: view.scene.viewport });
             break;
         case "noteOn":
             scene.noteOn(message.midi, message.velocity);
@@ -124,9 +126,13 @@ self.onmessage = (event: MessageEvent<ToRenderer>): void => {
         case "panic":
             scene.panic();
             break;
-        case "setting":
+        case "setting": {
             store?.set(message.id, message.value);
+            // Ступень качества и диапазон клавиатуры меняют вид сцены: двойнику
+            // о новом виде надо сказать, иначе его геометрия отстанет.
+            send({ type: "viewport", viewport: scene.viewport });
             break;
+        }
         case "score":
             scene.playback.mirror({ score: message.score });
             break;

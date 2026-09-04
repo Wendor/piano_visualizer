@@ -1,3 +1,4 @@
+import type { Viewport } from "../core/types";
 import type { Score } from "../score/types";
 import type { ParamValue } from "../settings/types";
 
@@ -43,4 +44,12 @@ export type ToRenderer =
 
 /** Что рисующий говорит в ответ. */
 export type FromRenderer =
-    { type: "stats"; stats: RenderStats } | { type: "fault"; id: string; title: string; message: string };
+    | { type: "stats"; stats: RenderStats }
+    /**
+     * Каким вышел вид сцены. Геометрия клавиш выравнивается по целым
+     * физическим пикселям, а плотность зависит от ступени качества — той, что
+     * выбрал рисующий. Двойник берёт её же, иначе указатель будет попадать
+     * мимо клавиш на полпикселя.
+     */
+    | { type: "viewport"; viewport: Viewport }
+    | { type: "fault"; id: string; title: string; message: string };

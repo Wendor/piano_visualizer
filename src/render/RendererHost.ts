@@ -147,6 +147,7 @@ export class RendererHost {
 
     private receive(message: FromRenderer): void {
         if (message.type === "stats") this.latest = message.stats;
+        else if (message.type === "viewport") this.twin.scene.resize(message.viewport);
         else this.faultHook?.(message.title, message.message);
     }
 
