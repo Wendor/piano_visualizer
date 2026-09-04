@@ -83,10 +83,32 @@ describe("FrameProfiler", () => {
         profiler.endFrame();
         expect(profiler.rows()).toHaveLength(1);
 
-        profiler.measure("bloom", () => time.advance(5));
-        profiler.endFrame();
+        // Метка уходит не мгновенно: работа, идущая реже кадра, из отчёта
+        // выпадать не должна.
+        for (let i = 0; i < 40; i++) {
+            profiler.measure("bloom", () => time.advance(5));
+            profiler.endFrame();
+        }
 
         expect(profiler.rows().map((row) => row.label)).toEqual(["bloom"]);
+    });
+
+    it("работа реже кадра остаётся в отчёте, но средним по кадрам", () => {
+        const time = clock();
+        const profiler = new FrameProfiler(time.now);
+        profiler.setEnabled(true);
+
+        // Свечение обновляется через кадр: в отчёте должна стоять его доля в
+        // среднем кадре, иначе сумма строк не сойдётся со временем кадра.
+        for (let i = 0; i < 60; i++) {
+            if (i % 2 === 0) profiler.measure("glow", () => time.advance(10));
+            profiler.endFrame();
+        }
+
+        const row = profiler.rows()[0]!;
+        expect(row.label).toBe("glow");
+        expect(row.ms).toBeGreaterThan(3);
+        expect(row.ms).toBeLessThan(7);
     });
 
     it("возвращает результат измеряемой работы", () => {

@@ -1,3 +1,4 @@
+import { Cadence } from "./Cadence";
 import { FrameProfiler } from "./FrameProfiler";
 import { GlowBuffer } from "./GlowBuffer";
 import { paintStack, updateStack } from "./paint";
@@ -9,6 +10,13 @@ import type { LayerFault } from "./paint";
 import type { Layer } from "./types";
 import { canvasSize, resolveViewport } from "./viewport";
 import type { InputSource } from "../input/types";
+
+/**
+ * Частота обновления буфера свечения. Свет размыт и инерционен: между 40 и 60
+ * обновлениями в секунду глаз разницы не видит, а работа — размытие плюс всё,
+ * что слои рисуют в буфер, — сокращается на треть и больше.
+ */
+const GLOW_HZ = 40;
 
 /** Слой добавлен (`added = true`) или удалён. */
 export type LayerHook = (layer: Layer, added: boolean) => void;
@@ -45,6 +53,8 @@ export class Visualizer {
     // Событий resize приходит поток, а перестройка холста и кэшей дорогая:
     // на кадр хватает одной.
     private readonly onResize = coalesce(() => this.resize());
+    /** Буфер свечения наполняется реже кадра — см. `GLOW_HZ`. */
+    private readonly glowClock = new Cadence(GLOW_HZ);
 
     constructor(options: VisualizerOptions) {
         this.canvas = options.canvas;
@@ -196,6 +206,9 @@ export class Visualizer {
         this.ctx.setTransform(viewport.dpr, 0, 0, viewport.dpr, 0, 0);
 
         this.glow.resize(viewport);
+        // Буфер только что очищен пересозданием холста: ждать своей очереди
+        // ему нельзя, иначе кадр выйдет без свечения вовсе.
+        this.glowClock.force();
         this.scene.resize(viewport);
         for (const layer of this.layerList) layer.resize?.(this.scene);
     }
@@ -212,19 +225,25 @@ export class Visualizer {
         const started = performance.now();
         this.scene.advance(dt);
         this.render(dt);
-        this.quality.sample(performance.now() - started, frameMs, dt);
+        this.quality.sample(performance.now() - started, frameMs);
         this.profiler.endFrame();
         if (this.running) this.frame = requestAnimationFrame(this.tick);
     };
 
-    /** Один кадр: обновление → буфер свечения → основной холст. */
+    /**
+     * Один кадр: обновление → буфер свечения → основной холст. Свечение
+     * наполняется реже кадра, поэтому средний кадр обходится одним проходом
+     * по слоям вместо двух.
+     */
     render(dt: number): void {
         const { scene, ctx } = this;
 
         updateStack(this.layerList, scene, dt, this.onFault, this.profiler);
 
-        const glowCtx = this.glow.begin(scene.viewport);
-        paintStack(glowCtx, this.layerList, "drawGlow", scene, this.onFault, this.profiler);
+        if (this.glowClock.due(dt)) {
+            const glowCtx = this.glow.begin(scene.viewport);
+            paintStack(glowCtx, this.layerList, "drawGlow", scene, this.onFault, this.profiler);
+        }
 
         ctx.setTransform(scene.viewport.dpr, 0, 0, scene.viewport.dpr, 0, 0);
         ctx.globalAlpha = 1;

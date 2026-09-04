@@ -8,12 +8,21 @@ import type { Viewport } from "./types";
 export class GlowBuffer {
     readonly canvas: HTMLCanvasElement;
     readonly ctx: CanvasRenderingContext2D;
+    /**
+     * Номер обновления. Буфер наполняется не каждый кадр, и блум по этому
+     * номеру понимает, что размывать заново нечего: содержимое то же самое.
+     */
+    private updates = 0;
 
     constructor(private scale = 0.25) {
         this.canvas = document.createElement("canvas");
         const ctx = this.canvas.getContext("2d");
         if (!ctx) throw new Error("Не удалось создать контекст буфера свечения");
         this.ctx = ctx;
+    }
+
+    get version(): number {
+        return this.updates;
     }
 
     /** Доля экрана, в которой живёт буфер. Меняется вместе с качеством. */
@@ -33,6 +42,7 @@ export class GlowBuffer {
     /** Очистка и перевод координат буфера в координаты сцены. */
     begin(viewport: Viewport): CanvasRenderingContext2D {
         const { ctx, canvas } = this;
+        this.updates++;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.setTransform(canvas.width / viewport.width, 0, 0, canvas.height / viewport.height, 0, 0);

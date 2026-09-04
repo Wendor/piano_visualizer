@@ -4,7 +4,7 @@ import { Quality } from "./Quality";
 /** Прогнать несколько секунд одинаковых кадров: работа и промежуток. */
 function run(quality: Quality, workMs: number, frameMs: number, seconds: number): void {
     const dt = frameMs / 1000;
-    for (let i = 0; i < Math.ceil(seconds / dt); i++) quality.sample(workMs, frameMs, dt);
+    for (let i = 0; i < Math.ceil(seconds / dt); i++) quality.sample(workMs, frameMs);
 }
 
 describe("Quality", () => {
@@ -28,6 +28,14 @@ describe("Quality", () => {
         run(quality, 20, 40, 5);
         expect(quality.level).toBe("low");
         expect(quality.profile.renderScale).toBeLessThan(1);
+    });
+
+    it("на очень медленных кадрах решает за то же время, что и на быстрых", () => {
+        const quality = new Quality();
+        // Кадры по 180 мс: полторы секунды тяжёлой работы — это девять кадров,
+        // а не девять секунд.
+        for (let i = 0; i < 10; i++) quality.sample(30, 180);
+        expect(quality.level).toBe("medium");
     });
 
     it("не опускает ниже низкой ступени", () => {
@@ -57,7 +65,7 @@ describe("Quality", () => {
 
     it("длинный кадр из фоновой вкладки не считается тормозом", () => {
         const quality = new Quality();
-        for (let i = 0; i < 60; i++) quality.sample(5, 4000, 0.05);
+        for (let i = 0; i < 60; i++) quality.sample(5, 4000);
         expect(quality.level).toBe("high");
     });
 
@@ -107,7 +115,7 @@ describe("Quality: рваный ход", () => {
             const frameMs = pattern[i++ % pattern.length]!;
             // Холст рисует не сразу: работа JavaScript выглядит скромно даже
             // тогда, когда кадр на экране не успевает.
-            quality.sample(4, frameMs, frameMs / 1000);
+            quality.sample(4, frameMs);
             elapsed += frameMs;
         }
     }
@@ -128,7 +136,7 @@ describe("Quality: рваный ход", () => {
 
     it("ровный быстрый ход ступень не роняет", () => {
         const quality = new Quality();
-        for (let i = 0; i < 1000; i++) quality.sample(4, 8.3, 0.0083);
+        for (let i = 0; i < 1000; i++) quality.sample(4, 8.3);
         expect(quality.level).toBe("high");
     });
 });

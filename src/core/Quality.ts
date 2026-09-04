@@ -14,7 +14,7 @@ export interface QualityProfile {
     readonly renderScale: number;
     /** Размер буфера свечения в долях экрана. */
     readonly glowScale: number;
-    /** Сколько проходов размытия кладёт блум. */
+    /** Сколько ступеней пирамиды размытия строит блум. */
     readonly bloomPasses: number;
     /** Множитель числа частиц: искр, пыли, облаков дымки. */
     readonly particles: number;
@@ -33,11 +33,11 @@ const PROFILES: Readonly<Record<QualityLevel, QualityProfile>> = {
     // целиком (1512×982 при плотности 2 — это 5.9 мегапикселя). Низкая
     // ступень рассчитана на машину без ускорения холста: там платят за
     // каждый пиксель, а полноэкранных проходов у сцены полдюжины.
-    high: { renderScale: 1, glowScale: 0.25, bloomPasses: 3, particles: 1, detail: 1, maxPixels: 6_200_000 },
+    high: { renderScale: 1, glowScale: 0.25, bloomPasses: 4, particles: 1, detail: 1, maxPixels: 6_200_000 },
     medium: {
         renderScale: 0.8,
         glowScale: 0.2,
-        bloomPasses: 2,
+        bloomPasses: 3,
         particles: 0.6,
         detail: 0.5,
         maxPixels: 3_000_000
@@ -45,7 +45,7 @@ const PROFILES: Readonly<Record<QualityLevel, QualityProfile>> = {
     low: {
         renderScale: 0.4,
         glowScale: 0.16,
-        bloomPasses: 1,
+        bloomPasses: 2,
         particles: 0.25,
         detail: 0,
         maxPixels: 900_000
@@ -152,23 +152,29 @@ export class Quality {
      * а по устойчивой картине: случайная задержка от сборки мусора не должна
      * ронять качество.
      */
-    sample(workMs: number, frameMs: number, dt: number): void {
+    sample(workMs: number, frameMs: number): void {
         this.smoothness.sample(frameMs);
+        // Часы здесь свои: время меряется длиной кадра, а не шагом сцены. Шаг
+        // ограничен сверху, чтобы прыжок времени не рвал физику, — и на слабой
+        // машине, где кадр идёт впятеро дольше потолка, счёт «полторы секунды
+        // подряд тяжело» растянулся бы на восемь реальных секунд. Ступень
+        // опускалась бы медленнее всего там, где она нужнее всего.
+        const seconds = Math.min(0.25, frameMs / 1000);
         // Промежутки длиннее 200 мс — это не «медленно», это вкладка была в фоне.
         if (frameMs < 200) this.frameMs += (frameMs - this.frameMs) * 0.08;
         if (workMs < 200) this.workMs += (workMs - this.workMs) * 0.08;
         if (this.modeValue !== "auto") return;
 
         if (this.cooldown > 0) {
-            this.cooldown -= dt;
+            this.cooldown -= seconds;
             return;
         }
 
         const jitter = this.smoothness.jitter;
         const slow = this.workMs > SLOW_WORK_MS || this.frameMs > SLOW_FRAME_MS || jitter > SLOW_JITTER;
         const fast = this.workMs < FAST_WORK_MS && this.frameMs < FAST_FRAME_MS && jitter < FAST_JITTER;
-        this.slowFor = slow ? this.slowFor + dt : 0;
-        this.fastFor = fast ? this.fastFor + dt : 0;
+        this.slowFor = slow ? this.slowFor + seconds : 0;
+        this.fastFor = fast ? this.fastFor + seconds : 0;
 
         const index = LADDER.indexOf(this.levelValue);
         if (this.slowFor >= DROP_AFTER && index > 0) this.shift(index - 1);
