@@ -22,6 +22,7 @@ function parseArgs(argv) {
         cpu: 6,
         seconds: 6,
         gpu: false,
+        softCanvas: false,
         shot: "",
         browser: "chrome",
         prefs: [],
@@ -33,6 +34,7 @@ function parseArgs(argv) {
         else if (arg === "--cpu") options.cpu = Number(argv[++i]);
         else if (arg === "--seconds") options.seconds = Number(argv[++i]);
         else if (arg === "--gpu") options.gpu = true;
+        else if (arg === "--soft-canvas") options.softCanvas = true;
         else if (arg === "--shot") options.shot = argv[++i];
         else if (arg === "--firefox") options.browser = "firefox";
         else if (arg === "--pref") options.prefs.push(argv[++i]);
@@ -331,7 +333,12 @@ async function main() {
         "--window-size=1280,720",
         "about:blank"
     ];
-    if (!options.gpu) {
+    if (options.softCanvas) {
+        // Середина между двумя крайностями, и она же — обычный телевизор: холст
+        // растеризует процессор, а складывает слои на экране всё-таки видеочип.
+        // Разница видна там, где работу можно отдать композитору.
+        flags.unshift("--disable-accelerated-2d-canvas");
+    } else if (!options.gpu) {
         // Тот самый режим, в котором живёт слабый телевизор: холст растеризует
         // процессор, композиция тоже на нём.
         flags.unshift("--disable-gpu", "--disable-gpu-compositing", "--disable-accelerated-2d-canvas");
@@ -381,7 +388,12 @@ async function main() {
         // Замедлять процессор умеет только протокол Chrome; в Firefox сравниваем
         // как есть — там вопрос к самому движку, а не к слабой машине.
         const slowdown = firefox ? "" : `, процессор замедлен в ${options.cpu}×`;
-        const accel = options.gpu || firefox ? "аппаратное" : "выключено";
+        const accel =
+            options.gpu || firefox
+                ? "аппаратное"
+                : options.softCanvas
+                  ? "только композиция, холст на процессоре"
+                  : "выключено";
         console.log(`${firefox ? "Firefox" : "Chrome"}: ускорение ${accel}${slowdown}`);
         const results = [];
         for (const spec of options.cases) {

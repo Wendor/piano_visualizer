@@ -56,6 +56,14 @@ export class NoteStyle {
     private quality: Quality | null = null;
     private texture: HTMLCanvasElement | null = null;
     private readonly patterns = new WeakMap<CanvasRenderingContext2D, CanvasPattern>();
+    /**
+     * Рабочие мелочи, которые иначе рождались бы на каждую ноту в каждом кадре:
+     * два кортежа радиусов и матрица сдвига текстуры. Нот в кадре сотня, кадров
+     * шестьдесят — это тысячи объектов в секунду на ровном месте.
+     */
+    private readonly corners: [number, number, number, number] = [0, 0, 0, 0];
+    private readonly innerCorners: [number, number, number, number] = [0, 0, 0, 0];
+    private readonly shift = typeof DOMMatrix === "function" ? new DOMMatrix() : null;
     /** Время сцены: живая заливка и шлейф должны двигаться. */
     time = 0;
 
@@ -184,24 +192,33 @@ export class NoteStyle {
      */
     radii(bar: NoteBar): [number, number, number, number] {
         const r = Math.min(bar.width * this.options.roundness, bar.height / 2);
-        return bar.openBottom ? [r, r, 0, 0] : [r, r, r, r];
+        const corners = this.corners;
+        corners[0] = r;
+        corners[1] = r;
+        corners[2] = bar.openBottom ? 0 : r;
+        corners[3] = bar.openBottom ? 0 : r;
+        return corners;
     }
 
-    /** Свечение: пустая нота светится кантом, залитая — всей площадью. */
+    /**
+     * Свечение: пустая нота светится кантом, залитая — всей площадью.
+     *
+     * Прямоугольник без скруглений и без пути: в буфере свечения нота вчетверо
+     * уже, чем на экране, скругление там — пара пикселей, и размытие съедает
+     * его раньше, чем глаз заметит. `fillRect` вместо `roundRect` + `fill`
+     * снимает построение пути с каждой ноты в каждом кадре.
+     */
     drawGlow(g: CanvasRenderingContext2D, theme: Theme, bar: NoteBar): void {
         this.drawTrail(g, theme, bar);
-        const radii = this.radii(bar);
         g.globalAlpha = 0.5 + bar.velocity * 0.28;
 
         if (bar.hollow) {
             g.strokeStyle = theme.color(bar.hue, 56);
             g.lineWidth = Math.max(2, bar.width * 0.24);
-            roundRectPath(g, bar.x, bar.top, bar.width, bar.height, radii);
-            g.stroke();
+            g.strokeRect(bar.x, bar.top, bar.width, bar.height);
         } else {
             g.fillStyle = theme.color(bar.hue, 54);
-            roundRectPath(g, bar.x, bar.top, bar.width, bar.height, radii);
-            g.fill();
+            g.fillRect(bar.x, bar.top, bar.width, bar.height);
         }
         g.globalAlpha = 1;
     }
@@ -254,14 +271,18 @@ export class NoteStyle {
         g.save();
         g.translate(bar.x, bar.top);
 
+        // Путь строится дважды, а не четырежды: холст помнит его до следующего
+        // `beginPath`, поэтому тело и живая заливка ложатся по одному контуру,
+        // а кант и блик — по другому.
         g.fillStyle = this.body(g, theme, bar, filled);
         roundRectPath(g, 0, 0, width, height, radii);
         g.fill();
 
-        this.drawTexture(g, bar, width, height, radii);
+        this.drawTexture(g, bar);
 
         const inset = stroke / 2;
-        const innerRadii = radii.map((r) => Math.max(0, r - inset)) as [number, number, number, number];
+        const innerRadii = this.innerCorners;
+        for (let i = 0; i < 4; i++) innerRadii[i] = Math.max(0, radii[i]! - inset);
         const innerW = Math.max(0, width - stroke);
         const innerH = Math.max(0, height - stroke);
 
@@ -276,7 +297,6 @@ export class NoteStyle {
             g.globalAlpha = alpha * (filled ? 0.45 : 0.55);
             g.strokeStyle = theme.color(bar.hue, 86, 1);
             g.lineWidth = Math.max(0.6, stroke * 0.3);
-            roundRectPath(g, inset, inset, innerW, innerH, innerRadii);
             g.stroke();
             g.globalAlpha = 1;
         }
@@ -287,34 +307,31 @@ export class NoteStyle {
      * Живая заливка: полупрозрачная облачная текстура внутри ноты, медленно
      * плывущая вдоль неё. Один тайл на всю сцену, поэтому цена — одна заливка.
      */
-    private drawTexture(
-        g: CanvasRenderingContext2D,
-        bar: NoteBar,
-        width: number,
-        height: number,
-        radii: [number, number, number, number]
-    ): void {
+    private drawTexture(g: CanvasRenderingContext2D, bar: NoteBar): void {
         const amount = this.options.texture;
         if (amount <= 0.01 || this.detail < 0.5) return;
 
         const pattern = this.pattern(g);
         if (!pattern) return;
 
-        if (typeof DOMMatrix === "function") {
+        if (this.shift) {
             // Каждая нота плывёт по-своему: своя точка в тайле и своя скорость.
             // Одной фазы мало — облака шли бы парадом, просто из разных мест.
             const phaseX = bar.seed * 64;
             // Семёрка расцепляет оси: иначе все ноты сидели бы на одной диагонали.
             const phaseY = ((bar.seed * 7) % 1) * 64;
             const drift = -this.time * 22 * (0.7 + bar.seed * 0.6);
-            pattern.setTransform(new DOMMatrix().translateSelf(phaseX, (drift + phaseY) % 64));
+            // Матрица одна на сцену: сдвиг — это её последние два числа.
+            this.shift.e = phaseX;
+            this.shift.f = (drift + phaseY) % 64;
+            pattern.setTransform(this.shift);
         }
 
+        // Контур уже построен телом ноты — заливка ложится по нему же.
         g.save();
         g.globalCompositeOperation = "lighter";
         g.globalAlpha = amount * (0.45 + bar.velocity * 0.55);
         g.fillStyle = pattern;
-        roundRectPath(g, 0, 0, width, height, radii);
         g.fill();
         g.restore();
     }
