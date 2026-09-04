@@ -147,10 +147,11 @@ export class NoteStyle {
      *
      * Растеризация градиента считает интерполяцию на каждый пиксель. Там, где
      * холст рисует процессор, это дороже всей остальной ноты вместе взятой —
-     * дороже и скруглённого пути, и канта.
+     * дороже и скруглённого пути, и канта: замер в Firefox дал 7.5 мс из 29
+     * на одном только градиенте. Поэтому его держит лишь высшая ступень.
      */
     get flatFill(): boolean {
-        return this.detail < 0.5;
+        return this.detail < 1;
     }
 
     params(): ParamSpec[] {
@@ -363,7 +364,10 @@ export class NoteStyle {
      */
     private drawTexture(g: Ctx2D, bar: NoteBar): void {
         const amount = this.options.texture;
-        if (amount <= 0.01 || this.detail < 0.5) return;
+        // Только высшая ступень. Узор ложится сложением, а сложение читает
+        // то, что уже лежит на холсте: там, где рисует процессор, это самая
+        // дорогая вещь во всей сцене — 15 мс из 29 у нот.
+        if (amount <= 0.01 || this.detail < 1) return;
 
         const pattern = this.pattern(g);
         if (!pattern) return;
