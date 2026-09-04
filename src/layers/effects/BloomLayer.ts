@@ -6,6 +6,8 @@ import { clamp } from "../../core/math";
 import { Trial } from "../../core/Trial";
 import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
+import { context2d, createSurface } from "../../core/surface";
+import type { Ctx2D, Surface } from "../../core/surface";
 
 export interface BloomOptions {
     /** Общая сила свечения: 0 — выключено, 2 — максимум. */
@@ -23,17 +25,16 @@ export interface BloomOptions {
 }
 
 /** Холст с контекстом: ступень пирамиды или накопитель размытий. */
-interface Surface {
-    canvas: HTMLCanvasElement;
-    ctx: CanvasRenderingContext2D;
+interface Sheet {
+    canvas: Surface;
+    ctx: Ctx2D;
 }
 
 /** Каким способом движок размывает дешевле. Выясняется замером, а не догадкой. */
 type Road = "pyramid" | "filter";
 
 const supportsFilter = ((): boolean => {
-    const probe = document.createElement("canvas").getContext("2d");
-    if (!probe) return false;
+    const probe = context2d(createSurface(), "проба фильтра");
     probe.filter = "blur(2px)";
     return probe.filter === "blur(2px)";
 })();
@@ -63,9 +64,9 @@ export class BloomLayer extends BaseLayer {
     readonly options: BloomOptions;
 
     /** Ступени пирамиды: каждая вдвое меньше предыдущей. */
-    private readonly steps: Surface[] = [];
+    private readonly steps: Sheet[] = [];
     /** Накопитель для дороги через фильтр: размером с буфер свечения. */
-    private accumulator: Surface | null = null;
+    private accumulator: Sheet | null = null;
     /** Из какого обновления буфера свечения собрано размытие. */
     private painted = -1;
     /**
@@ -112,7 +113,7 @@ export class BloomLayer extends BaseLayer {
         return this.options.strength;
     }
 
-    override draw(g: CanvasRenderingContext2D, scene: Scene): void {
+    override draw(g: Ctx2D, scene: Scene): void {
         const { strength } = this.options;
         if (strength <= 0.01) return;
 
@@ -142,7 +143,7 @@ export class BloomLayer extends BaseLayer {
      * Готовое размытие. Буфер свечения наполняется реже кадра, и пока в нём то
      * же самое, размывать нечего.
      */
-    private blurred(source: HTMLCanvasElement): HTMLCanvasElement | null {
+    private blurred(source: Surface): Surface | null {
         const count = clamp(
             Math.min(this.options.passes.length, this.quality.profile.bloomPasses),
             1,
@@ -163,18 +164,18 @@ export class BloomLayer extends BaseLayer {
         return this.result(road);
     }
 
-    private result(road: Road): HTMLCanvasElement | null {
+    private result(road: Road): Surface | null {
         return road === "filter" ? (this.accumulator?.canvas ?? null) : (this.steps[0]?.canvas ?? null);
     }
 
-    private build(road: Road, source: HTMLCanvasElement, count: number): void {
+    private build(road: Road, source: Surface, count: number): void {
         if (road === "pyramid") this.buildPyramid(source, count);
         else this.buildFilter(source, count);
     }
 
     /** Спуск по пирамиде и подъём обратно: масштабы складываются в первой ступени. */
-    private buildPyramid(source: HTMLCanvasElement, count: number): void {
-        let previous: HTMLCanvasElement = source;
+    private buildPyramid(source: Surface, count: number): void {
+        let previous: Surface = source;
         for (let i = 0; i < count; i++) {
             const step = this.steps[i]!;
             // `copy` вместо очистки и рисования: прошлого кадра здесь не нужно.
@@ -199,7 +200,7 @@ export class BloomLayer extends BaseLayer {
      * произведения, что складывались бы при подъёме, иначе дороги дали бы
      * разную картинку.
      */
-    private buildFilter(source: HTMLCanvasElement, count: number): void {
+    private buildFilter(source: Surface, count: number): void {
         const acc = this.accumulator;
         if (!acc) return;
 
@@ -221,7 +222,7 @@ export class BloomLayer extends BaseLayer {
     }
 
     /** Развести холсты под текущий буфер. Возвращает `true`, если размеры сменились. */
-    private fit(source: HTMLCanvasElement, count: number): boolean {
+    private fit(source: Surface, count: number): boolean {
         let changed = this.size(
             this.accumulator ?? (this.accumulator = this.make()),
             source.width,
@@ -242,17 +243,15 @@ export class BloomLayer extends BaseLayer {
         return changed;
     }
 
-    private size(surface: Surface, width: number, height: number): boolean {
-        if (surface.canvas.width === width && surface.canvas.height === height) return false;
-        surface.canvas.width = width;
-        surface.canvas.height = height;
+    private size(sheet: Sheet, width: number, height: number): boolean {
+        if (sheet.canvas.width === width && sheet.canvas.height === height) return false;
+        sheet.canvas.width = width;
+        sheet.canvas.height = height;
         return true;
     }
 
-    private make(): Surface {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("Контекст блума недоступен");
-        return { canvas, ctx };
+    private make(): Sheet {
+        const canvas = createSurface();
+        return { canvas, ctx: context2d(canvas, "накопитель блума") };
     }
 }

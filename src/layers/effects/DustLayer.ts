@@ -3,6 +3,7 @@ import type { Scene } from "../../core/Scene";
 import type { Quality } from "../../core/Quality";
 import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
+import type { Ctx2D } from "../../core/surface";
 
 export interface DustOptions {
     /** Плотность пыли: 0 — нет, 2 — метель. */
@@ -83,17 +84,17 @@ export class DustLayer extends BaseLayer {
         }
     }
 
-    override draw(g: CanvasRenderingContext2D, scene: Scene): void {
+    override draw(g: Ctx2D, scene: Scene): void {
         this.paint(g, scene, 1, 1);
     }
 
-    override drawGlow(g: CanvasRenderingContext2D, scene: Scene): void {
+    override drawGlow(g: Ctx2D, scene: Scene): void {
         // В буфере свечения пылинка меньше пикселя — рисуем крупнее и мягче,
         // иначе после размытия от неё не останется следа.
         this.paint(g, scene, 2.6, 0.55);
     }
 
-    private paint(g: CanvasRenderingContext2D, scene: Scene, scale: number, weight: number): void {
+    private paint(g: Ctx2D, scene: Scene, scale: number, weight: number): void {
         if (this.motes.length === 0) return;
         const level = (0.3 + scene.energy * 0.7) * weight;
 

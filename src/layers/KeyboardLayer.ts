@@ -4,6 +4,8 @@ import type { PianoKey } from "../core/layout";
 import type { Theme } from "../theme/Theme";
 import { roundRectPath } from "../core/math";
 import { GradientCache, bucket } from "../core/gradients";
+import { context2d, createSurface } from "../core/surface";
+import type { Ctx2D, Surface } from "../core/surface";
 
 export interface KeyboardOptions {
     /** Скорость угасания подсветки после отпускания, 1/сек. */
@@ -24,10 +26,10 @@ export class KeyboardLayer extends BaseLayer {
     readonly toggleable = false;
     readonly options: KeyboardOptions;
 
-    private readonly whiteCache = document.createElement("canvas");
-    private readonly blackCache = document.createElement("canvas");
-    private readonly whiteCtx: CanvasRenderingContext2D;
-    private readonly blackCtx: CanvasRenderingContext2D;
+    private readonly whiteCache = createSurface();
+    private readonly blackCache = createSurface();
+    private readonly whiteCtx: Ctx2D;
+    private readonly blackCtx: Ctx2D;
     private readonly press = new Map<number, number>();
     private readonly gradients = new GradientCache(256);
     private dpr = 1;
@@ -39,10 +41,8 @@ export class KeyboardLayer extends BaseLayer {
         this.blackCtx = this.context(this.blackCache);
     }
 
-    private context(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("2D-контекст клавиатуры недоступен");
-        return ctx;
+    private context(canvas: Surface): Ctx2D {
+        return context2d(canvas, "клавиатура");
     }
 
     override init(scene: Scene): void {
@@ -71,7 +71,7 @@ export class KeyboardLayer extends BaseLayer {
         }
     }
 
-    override draw(g: CanvasRenderingContext2D, scene: Scene): void {
+    override draw(g: Ctx2D, scene: Scene): void {
         const { layout, viewport } = scene;
         g.drawImage(this.whiteCache, 0, layout.top, viewport.width, layout.height);
         this.drawPressed(g, scene, false);
@@ -84,7 +84,7 @@ export class KeyboardLayer extends BaseLayer {
     // --- статичный рисунок клавиш -------------------------------------------
 
     /** Контур клавиши: скруглены только передние (нижние) углы. */
-    private keyPath(g: CanvasRenderingContext2D, key: PianoKey, x: number, y: number): void {
+    private keyPath(g: Ctx2D, key: PianoKey, x: number, y: number): void {
         const r = key.accidental ? Math.min(3, key.width * 0.16) : Math.min(4, key.width * 0.13);
         roundRectPath(g, x, y, key.width, key.height, [0, 0, r, r]);
     }
@@ -215,7 +215,7 @@ export class KeyboardLayer extends BaseLayer {
      * зависят только от цвета и высоты клавиши — и живут в кэше, а не строятся
      * заново для каждой клавиши каждый кадр.
      */
-    private drawPressed(g: CanvasRenderingContext2D, scene: Scene, accidental: boolean): void {
+    private drawPressed(g: Ctx2D, scene: Scene, accidental: boolean): void {
         const { layout, theme } = scene;
         const top = layout.top;
         const hair = Math.max(1, 1 / this.dpr);
@@ -259,7 +259,7 @@ export class KeyboardLayer extends BaseLayer {
     }
 
     private pressGradient(
-        g: CanvasRenderingContext2D,
+        g: Ctx2D,
         theme: Theme,
         key: PianoKey,
         hue: number,
@@ -282,12 +282,7 @@ export class KeyboardLayer extends BaseLayer {
         });
     }
 
-    private hotGradient(
-        g: CanvasRenderingContext2D,
-        theme: Theme,
-        hue: number,
-        edgeHeight: number
-    ): CanvasGradient {
+    private hotGradient(g: Ctx2D, theme: Theme, hue: number, edgeHeight: number): CanvasGradient {
         const h = Math.round(edgeHeight);
         const id = `hot|${theme.palette.id}|${bucket(hue, 2)}|${h}`;
         return this.gradients.get(id, () => {
@@ -298,7 +293,7 @@ export class KeyboardLayer extends BaseLayer {
         });
     }
 
-    private footGradient(g: CanvasRenderingContext2D, key: PianoKey): CanvasGradient {
+    private footGradient(g: Ctx2D, key: PianoKey): CanvasGradient {
         const h = Math.round(key.height);
         return this.gradients.get(`foot|${h}`, () => {
             const foot = g.createLinearGradient(0, h - 8, 0, h);
@@ -309,7 +304,7 @@ export class KeyboardLayer extends BaseLayer {
     }
 
     /** Свет ложится на верх клавиши, не выходя за её контур. */
-    private drawSpill(g: CanvasRenderingContext2D, scene: Scene, accidental: boolean): void {
+    private drawSpill(g: Ctx2D, scene: Scene, accidental: boolean): void {
         const { layout, theme } = scene;
         for (const key of layout.keys) {
             if (key.accidental !== accidental) continue;

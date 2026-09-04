@@ -5,6 +5,7 @@ import { firstLineAtOrAfter } from "../../score/grid";
 import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
 import { NoteStyle, noteStyle } from "./style";
+import type { Ctx2D } from "../../core/surface";
 
 export interface BarGridOptions {
     /** Яркость линий такта, 0 — не рисовать. */
@@ -71,7 +72,7 @@ export class BarGridLayer extends BaseLayer {
         ];
     }
 
-    override draw(g: CanvasRenderingContext2D, scene: Scene): void {
+    override draw(g: Ctx2D, scene: Scene): void {
         const score = scene.playback.score;
         if (!score || this.style.options.speed <= 0) return;
 
@@ -85,7 +86,7 @@ export class BarGridLayer extends BaseLayer {
         }
     }
 
-    private paint(g: CanvasRenderingContext2D, scene: Scene, times: readonly number[], color: string): void {
+    private paint(g: Ctx2D, scene: Scene, times: readonly number[], color: string): void {
         const { layout, viewport, playback } = scene;
         const speed = this.style.options.speed;
         const now = playback.time;

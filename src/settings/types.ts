@@ -27,13 +27,29 @@ interface ParamBase {
     readonly group: ParamGroup;
 }
 
+/**
+ * Как показать число: 240 → «240 px/с», 0.62 → «62%», 1.25 → «×1.25».
+ *
+ * Описание, а не функция: панель настроек живёт в главном потоке, а сцена со
+ * своими слоями — в рабочем, и функцию между ними не передать. Описание же
+ * переезжает как есть.
+ */
+export interface ParamFormat {
+    /** Доля 0…1 показывается процентами. */
+    readonly percent?: boolean;
+    readonly prefix?: string;
+    readonly unit?: string;
+    /** Знаков после запятой; по умолчанию — целое. */
+    readonly digits?: number;
+}
+
 export interface NumberParam extends ParamBase {
     readonly type: "number";
     readonly min: number;
     readonly max: number;
     readonly step: number;
-    /** Как показать значение: 240 → «240 px/с». По умолчанию — округление. */
-    readonly format?: (value: number) => string;
+    /** Как показать значение. По умолчанию — округление до целого. */
+    readonly format?: ParamFormat;
     get(): number;
     set(value: number): void;
 }
@@ -71,10 +87,8 @@ export interface Snapshot {
 /** Текущее значение параметра в человекочитаемом виде. */
 export function describe(spec: ParamSpec): string {
     switch (spec.type) {
-        case "number": {
-            const value = spec.get();
-            return spec.format ? spec.format(value) : String(Math.round(value));
-        }
+        case "number":
+            return formatted(spec.get(), spec.format);
         case "enum": {
             const current = spec.get();
             return spec.variants.find((item) => item.value === current)?.title ?? current;
@@ -88,7 +102,16 @@ export function describe(spec: ParamSpec): string {
     }
 }
 
-/** Процент для долей: 0.62 → «62%». */
-export function percent(value: number): string {
-    return `${Math.round(value * 100)}%`;
+/** Число по описанию: проценты, знаки после запятой, приставка и единица. */
+export function formatted(value: number, format?: ParamFormat): string {
+    if (!format) return String(Math.round(value));
+
+    const shown = format.percent ? value * 100 : value;
+    const digits = format.digits ?? 0;
+    const text = digits > 0 ? shown.toFixed(digits) : String(Math.round(shown));
+    const unit = format.percent ? "%" : format.unit ? ` ${format.unit}` : "";
+    return `${format.prefix ?? ""}${text}${unit}`;
 }
+
+/** Процент для долей: 0.62 → «62%». */
+export const percent: ParamFormat = { percent: true };

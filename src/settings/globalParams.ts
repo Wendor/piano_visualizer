@@ -78,7 +78,7 @@ export function registerGlobalParams(
                 min: 3.5,
                 max: 6.5,
                 step: 0.25,
-                format: (value) => `×${value.toFixed(2)}`,
+                format: { prefix: "×", digits: 2 },
                 get: () => scene.layout.settings.heightRatio,
                 set: (value) => {
                     scene.configureLayout({ heightRatio: value });

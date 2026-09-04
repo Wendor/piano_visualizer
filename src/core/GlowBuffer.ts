@@ -1,4 +1,6 @@
 import type { Viewport } from "./types";
+import { context2d, createSurface } from "./surface";
+import type { Ctx2D, Surface } from "./surface";
 
 /**
  * Буфер свечения. Слои рисуют в него всё, что должно светиться;
@@ -6,8 +8,8 @@ import type { Viewport } from "./types";
  * Низкое разрешение даёт мягкость почти бесплатно.
  */
 export class GlowBuffer {
-    readonly canvas: HTMLCanvasElement;
-    readonly ctx: CanvasRenderingContext2D;
+    readonly canvas: Surface;
+    readonly ctx: Ctx2D;
     /**
      * Номер обновления. Буфер наполняется не каждый кадр, и блум по этому
      * номеру понимает, что размывать заново нечего: содержимое то же самое.
@@ -15,10 +17,8 @@ export class GlowBuffer {
     private updates = 0;
 
     constructor(private scale = 0.25) {
-        this.canvas = document.createElement("canvas");
-        const ctx = this.canvas.getContext("2d");
-        if (!ctx) throw new Error("Не удалось создать контекст буфера свечения");
-        this.ctx = ctx;
+        this.canvas = createSurface();
+        this.ctx = context2d(this.canvas, "буфер свечения");
     }
 
     get version(): number {
@@ -40,7 +40,7 @@ export class GlowBuffer {
     }
 
     /** Очистка и перевод координат буфера в координаты сцены. */
-    begin(viewport: Viewport): CanvasRenderingContext2D {
+    begin(viewport: Viewport): Ctx2D {
         const { ctx, canvas } = this;
         this.updates++;
         ctx.setTransform(1, 0, 0, 1, 0, 0);

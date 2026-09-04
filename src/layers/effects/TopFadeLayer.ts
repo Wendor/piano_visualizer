@@ -2,6 +2,7 @@ import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
 import { GradientCache } from "../../core/gradients";
 import type { ParamSpec } from "../../settings/types";
+import type { Ctx2D } from "../../core/surface";
 
 export interface TopFadeOptions {
     /** Предельная высота затемнения у верхней кромки, px. */
@@ -34,7 +35,7 @@ export class TopFadeLayer extends BaseLayer {
                 min: 0,
                 max: 400,
                 step: 10,
-                format: (value) => `${Math.round(value)} px`,
+                format: { unit: "px" },
                 get: () => o.maxHeight,
                 set: (value) => {
                     o.maxHeight = value;
@@ -43,7 +44,7 @@ export class TopFadeLayer extends BaseLayer {
         ];
     }
 
-    override draw(g: CanvasRenderingContext2D, scene: Scene): void {
+    override draw(g: Ctx2D, scene: Scene): void {
         const height = Math.min(this.options.maxHeight, scene.layout.top * 0.35);
         if (height <= 0) return;
 

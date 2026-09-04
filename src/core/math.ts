@@ -1,5 +1,7 @@
 /** Мелкая математика и утилиты рисования, общие для всех слоёв. */
 
+import type { Ctx2D } from "./surface";
+
 export const clamp = (value: number, min: number, max: number): number =>
     value < min ? min : value > max ? max : value;
 
@@ -11,14 +13,7 @@ export const snap = (value: number, dpr: number): number => Math.round(value * d
 export type Radii = number | [number, number, number, number];
 
 /** Прямоугольник со скруглениями; fallback для движков без roundRect. */
-export function roundRectPath(
-    g: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    radii: Radii
-): void {
+export function roundRectPath(g: Ctx2D, x: number, y: number, w: number, h: number, radii: Radii): void {
     if (typeof g.roundRect === "function") {
         g.beginPath();
         g.roundRect(x, y, w, h, radii as number | number[]);

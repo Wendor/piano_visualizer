@@ -5,6 +5,7 @@ import { GradientCache, bucket } from "../../core/gradients";
 import { clamp, lerp } from "../../core/math";
 import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
+import type { Ctx2D } from "../../core/surface";
 
 export interface NebulaOptions {
     /** Плотность облаков: 0 — выключено, 2 — густой туман. */
@@ -79,7 +80,7 @@ export class NebulaLayer extends BaseLayer {
                 min: 0,
                 max: 40,
                 step: 2,
-                format: (value) => `${Math.round(value)} px/с`,
+                format: { unit: "px/с" },
                 get: () => o.drift,
                 set: (value) => {
                     o.drift = value;
@@ -132,7 +133,7 @@ export class NebulaLayer extends BaseLayer {
         }
     }
 
-    override drawGlow(g: CanvasRenderingContext2D, scene: Scene): void {
+    override drawGlow(g: Ctx2D, scene: Scene): void {
         const { density } = this.options;
         if (density <= 0.01 || this.width <= 0) return;
 

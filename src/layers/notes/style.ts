@@ -4,6 +4,8 @@ import type { Quality } from "../../core/Quality";
 import type { Theme } from "../../theme/Theme";
 import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
+import { context2d, createSurface } from "../../core/surface";
+import type { Ctx2D, Surface } from "../../core/surface";
 
 export interface NoteStyleOptions {
     /** Скорость полёта ноты, px/сек. */
@@ -106,8 +108,8 @@ export class NoteStyle {
 
     private readonly gradients = new GradientCache();
     private quality: Quality | null = null;
-    private texture: HTMLCanvasElement | null = null;
-    private readonly patterns = new WeakMap<CanvasRenderingContext2D, CanvasPattern>();
+    private texture: Surface | null = null;
+    private readonly patterns = new WeakMap<Ctx2D, CanvasPattern>();
     /**
      * Рабочие мелочи, которые иначе рождались бы на каждую ноту в каждом кадре:
      * два кортежа радиусов и матрица сдвига текстуры. Нот в кадре сотня, кадров
@@ -162,7 +164,7 @@ export class NoteStyle {
                 min: 80,
                 max: 600,
                 step: 20,
-                format: (value) => `${Math.round(value)} px/с`,
+                format: { unit: "px/с" },
                 get: () => o.speed,
                 set: (value) => {
                     o.speed = value;
@@ -260,7 +262,7 @@ export class NoteStyle {
      * его раньше, чем глаз заметит. `fillRect` вместо `roundRect` + `fill`
      * снимает построение пути с каждой ноты в каждом кадре.
      */
-    drawGlow(g: CanvasRenderingContext2D, theme: Theme, bar: NoteBar): void {
+    drawGlow(g: Ctx2D, theme: Theme, bar: NoteBar): void {
         this.drawTrail(g, theme, bar);
         g.globalAlpha = 0.5 + bar.velocity * 0.28;
 
@@ -279,7 +281,7 @@ export class NoteStyle {
      * Шлейф — размазанный след за задним краем ноты. Живёт только в буфере
      * свечения: там он и стоит дёшево, и сразу получается мягким.
      */
-    private drawTrail(g: CanvasRenderingContext2D, theme: Theme, bar: NoteBar): void {
+    private drawTrail(g: Ctx2D, theme: Theme, bar: NoteBar): void {
         const { trail, speed } = this.options;
         if (trail <= 0.01 || this.detail < 0.5) return;
 
@@ -311,7 +313,7 @@ export class NoteStyle {
      * Одна форма для всех нот: кант + сердцевина. Разница только в плотности
      * заливки — диез залит, натуральная нота остаётся пустой.
      */
-    draw(g: CanvasRenderingContext2D, theme: Theme, bar: NoteBar): void {
+    draw(g: Ctx2D, theme: Theme, bar: NoteBar): void {
         const filled = !bar.hollow;
         const alpha = 0.85 + bar.velocity * 0.15;
         const radii = this.radii(bar);
@@ -359,7 +361,7 @@ export class NoteStyle {
      * Живая заливка: полупрозрачная облачная текстура внутри ноты, медленно
      * плывущая вдоль неё. Один тайл на всю сцену, поэтому цена — одна заливка.
      */
-    private drawTexture(g: CanvasRenderingContext2D, bar: NoteBar): void {
+    private drawTexture(g: Ctx2D, bar: NoteBar): void {
         const amount = this.options.texture;
         if (amount <= 0.01 || this.detail < 0.5) return;
 
@@ -388,7 +390,7 @@ export class NoteStyle {
         g.restore();
     }
 
-    private pattern(g: CanvasRenderingContext2D): CanvasPattern | null {
+    private pattern(g: Ctx2D): CanvasPattern | null {
         const found = this.patterns.get(g);
         if (found) return found;
         this.texture ??= makeTexture();
@@ -399,12 +401,7 @@ export class NoteStyle {
     }
 
     /** Заливка тела ноты: градиент или ровный цвет на слабой машине. */
-    private body(
-        g: CanvasRenderingContext2D,
-        theme: Theme,
-        bar: NoteBar,
-        filled: boolean
-    ): CanvasGradient | string {
+    private body(g: Ctx2D, theme: Theme, bar: NoteBar, filled: boolean): CanvasGradient | string {
         const hue = bucket(bar.hue, 2);
         const width = Math.max(2, Math.round(bar.width));
         const velocity = bucket(bar.velocity, 0.1);
@@ -434,12 +431,9 @@ export class NoteStyle {
  * Облачный тайл для живой заливки. Каждое пятно рисуется девять раз со сдвигом
  * на размер тайла — тогда текстура повторяется без видимых швов.
  */
-function makeTexture(size = 64): HTMLCanvasElement {
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const g = canvas.getContext("2d");
-    if (!g) return canvas;
+function makeTexture(size = 64): Surface {
+    const canvas = createSurface(size, size);
+    const g = context2d(canvas, "облачный тайл");
 
     for (let i = 0; i < 14; i++) {
         const x = Math.random() * size;

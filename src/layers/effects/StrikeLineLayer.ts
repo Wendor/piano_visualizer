@@ -2,6 +2,7 @@ import { BaseLayer, Stage } from "../../core/types";
 import type { Scene } from "../../core/Scene";
 import { GradientCache } from "../../core/gradients";
 import type { ParamSpec } from "../../settings/types";
+import type { Ctx2D } from "../../core/surface";
 
 export interface StrikeLineOptions {
     /** Толщина светящейся кромки, px. */
@@ -32,7 +33,7 @@ export class StrikeLineLayer extends BaseLayer {
                 min: 2,
                 max: 24,
                 step: 1,
-                format: (value) => `${Math.round(value)} px`,
+                format: { unit: "px" },
                 get: () => o.height,
                 set: (value) => {
                     o.height = Math.round(value);
@@ -41,7 +42,7 @@ export class StrikeLineLayer extends BaseLayer {
         ];
     }
 
-    override draw(g: CanvasRenderingContext2D, scene: Scene): void {
+    override draw(g: Ctx2D, scene: Scene): void {
         const { layout, theme, viewport } = scene;
         const hue = theme.midHue;
         const height = this.options.height;

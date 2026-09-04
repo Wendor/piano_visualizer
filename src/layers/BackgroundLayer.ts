@@ -1,6 +1,7 @@
 import { BaseLayer, Stage } from "../core/types";
 import type { Scene } from "../core/Scene";
 import { GradientCache } from "../core/gradients";
+import type { Ctx2D } from "../core/surface";
 
 export interface BackgroundOptions {
     /** Насколько высоко от клавиатуры поднимается подсветка фона. */
@@ -23,7 +24,7 @@ export class BackgroundLayer extends BaseLayer {
         this.options = { glowFraction: 0.55, ...options };
     }
 
-    override draw(g: CanvasRenderingContext2D, scene: Scene): void {
+    override draw(g: Ctx2D, scene: Scene): void {
         const { width, height } = scene.viewport;
         const { top } = scene.layout;
 

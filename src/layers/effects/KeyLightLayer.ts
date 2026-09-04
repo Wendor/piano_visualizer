@@ -2,6 +2,7 @@ import { BaseLayer, Stage } from "../../core/types";
 import type { ParamSpec } from "../../settings/types";
 import type { Scene } from "../../core/Scene";
 import { GradientCache, bucket } from "../../core/gradients";
+import type { Ctx2D } from "../../core/surface";
 
 export interface KeyLightOptions {
     /** Скорость затухания вспышки удара, 1/сек. */
@@ -37,7 +38,7 @@ export class KeyLightLayer extends BaseLayer {
                 min: 1,
                 max: 12,
                 step: 0.5,
-                format: (value) => value.toFixed(1),
+                format: { digits: 1 },
                 get: () => o.decay,
                 set: (value) => {
                     o.decay = value;
@@ -51,7 +52,7 @@ export class KeyLightLayer extends BaseLayer {
                 min: 1,
                 max: 5,
                 step: 0.25,
-                format: (value) => value.toFixed(2),
+                format: { digits: 2 },
                 get: () => o.spread,
                 set: (value) => {
                     o.spread = value;
@@ -79,7 +80,7 @@ export class KeyLightLayer extends BaseLayer {
         }
     }
 
-    override drawGlow(g: CanvasRenderingContext2D, scene: Scene): void {
+    override drawGlow(g: Ctx2D, scene: Scene): void {
         const { layout, theme } = scene;
 
         for (const key of layout.keys) {

@@ -1,5 +1,6 @@
 import type { Scene } from "./Scene";
 import type { ParamSpec } from "../settings/types";
+import type { Ctx2D } from "./surface";
 
 export interface Viewport {
     width: number;
@@ -48,8 +49,8 @@ export interface Layer {
     init?(scene: Scene): void;
     resize?(scene: Scene): void;
     update?(scene: Scene, dt: number): void;
-    drawGlow?(g: CanvasRenderingContext2D, scene: Scene): void;
-    draw?(g: CanvasRenderingContext2D, scene: Scene): void;
+    drawGlow?(g: Ctx2D, scene: Scene): void;
+    draw?(g: Ctx2D, scene: Scene): void;
     dispose?(): void;
 }
 
@@ -66,7 +67,7 @@ export abstract class BaseLayer implements Layer {
     init(_scene: Scene): void {}
     resize(_scene: Scene): void {}
     update(_scene: Scene, _dt: number): void {}
-    drawGlow(_g: CanvasRenderingContext2D, _scene: Scene): void {}
-    draw(_g: CanvasRenderingContext2D, _scene: Scene): void {}
+    drawGlow(_g: Ctx2D, _scene: Scene): void {}
+    draw(_g: Ctx2D, _scene: Scene): void {}
     dispose(): void {}
 }

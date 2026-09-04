@@ -1,6 +1,7 @@
 import type { FrameProfiler } from "./FrameProfiler";
 import type { Scene } from "./Scene";
 import type { Layer } from "./types";
+import type { Ctx2D } from "./surface";
 
 /** Куда слой рисует: в основной холст или в буфер свечения. */
 export type Brush = "draw" | "drawGlow";
@@ -24,7 +25,7 @@ export function wantsGlow(layers: readonly Layer[]): boolean {
  * чистого листа. Иначе забытый `lighter` тихо уезжает в чужую отрисовку.
  */
 export function paintStack(
-    g: CanvasRenderingContext2D,
+    g: Ctx2D,
     layers: readonly Layer[],
     brush: Brush,
     scene: Scene,

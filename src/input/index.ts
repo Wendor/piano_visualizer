@@ -17,6 +17,11 @@ export function registerBuiltinInputs(): void {
     inputRegistry
         .register("input.midi", () => new MidiInput())
         .register("input.computerKeyboard", (_c, o) => new ComputerKeyboardInput(o as never))
-        .register("input.pointer", (c, o) => new PointerInput(c.canvas, (o?.["velocity"] as number) ?? 100))
+        .register("input.pointer", (c, o) => {
+            // Указателю нужен настоящий элемент страницы: в рабочем потоке
+            // холст без событий, и мышь туда не приходит.
+            if (!(c.canvas instanceof HTMLCanvasElement)) throw new Error("Указателю нужен холст страницы");
+            return new PointerInput(c.canvas, (o?.["velocity"] as number) ?? 100);
+        })
         .register("input.demo", (_c, o) => new DemoPlayer(o as never));
 }

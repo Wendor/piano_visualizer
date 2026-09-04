@@ -1,10 +1,11 @@
 import type { Layer } from "./types";
 import type { Visualizer } from "./Visualizer";
 import type { InputSource } from "../input/types";
+import type { Surface } from "./surface";
 
 export interface ModuleContext {
     readonly visualizer: Visualizer;
-    readonly canvas: HTMLCanvasElement;
+    readonly canvas: Surface;
 }
 
 export type LayerFactory = (context: ModuleContext, options?: Record<string, unknown>) => Layer;

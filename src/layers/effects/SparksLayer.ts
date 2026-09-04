@@ -2,6 +2,7 @@ import { BaseLayer, Stage } from "../../core/types";
 import type { ParamSpec } from "../../settings/types";
 import type { Scene } from "../../core/Scene";
 import type { Quality } from "../../core/Quality";
+import type { Ctx2D } from "../../core/surface";
 
 /** Чем группа искр отличается в свечении и на экране. */
 interface Look {
@@ -157,12 +158,12 @@ export class SparksLayer extends BaseLayer {
         this.sparks.sort(byGroup);
     }
 
-    override drawGlow(g: CanvasRenderingContext2D, scene: Scene): void {
+    override drawGlow(g: Ctx2D, scene: Scene): void {
         this.paint(g, scene, { lightness: 68, alpha: 0.85, tail: 0.014, wide: true });
         g.globalAlpha = 1;
     }
 
-    override draw(g: CanvasRenderingContext2D, scene: Scene): void {
+    override draw(g: Ctx2D, scene: Scene): void {
         g.globalCompositeOperation = "lighter";
         this.paint(g, scene, { lightness: 74, alpha: 0.9, tail: 0.012, wide: false });
     }
@@ -172,7 +173,7 @@ export class SparksLayer extends BaseLayer {
      * толщина ставятся раз в десяток искр, а не сто раз за кадр. Внутри группы
      * они одинаковы — на то она и группа.
      */
-    private paint(g: CanvasRenderingContext2D, scene: Scene, look: Look): void {
+    private paint(g: Ctx2D, scene: Scene, look: Look): void {
         const sparks = this.sparks;
         if (sparks.length === 0) return;
         g.lineCap = "round";
