@@ -1,7 +1,7 @@
 import { Sampler } from "./audio/Sampler";
 import { parseDebugFlags } from "./core/debugFlags";
 import { createSurface } from "./core/surface";
-import { makeEngine } from "./paint/engine";
+import { makeEngine, supportsGL } from "./paint/engine";
 import { Visualizer } from "./core/Visualizer";
 import { RendererHost } from "./render/RendererHost";
 import type { Layer } from "./core/types";
@@ -35,17 +35,26 @@ registerBuiltinLayers();
 registerBuiltinInputs();
 
 const debugFlags = parseDebugFlags(window.location.search);
-/**
- * Рисовать сцену в рабочем потоке, если браузер умеет отдать ему холст.
- * Кадр на слабой машине занимает двести миллисекунд, и всё это время нажатая
- * клавиша ждала бы своей очереди: в главном потоке остаются ввод, звук и
- * разметка, а картину собирает другой.
- */
-const inWorker = RendererHost.supported && debugFlags.worker !== false;
-
-// Двойник держит сцену, слои и их настройки: с ним работают ввод, звук и
-// панель. Холст ему не нужен — картину собирает рабочий поток.
 const wantsGL = debugFlags.gl !== false;
+/**
+ * Рисовать сцену в рабочем потоке или прямо в окне.
+ *
+ * Рабочий поток заводился под холст 2D: там кадр на слабой машине занимает
+ * двести миллисекунд, и всё это время нажатая клавиша ждала бы своей очереди.
+ * У видеочипа кадр стоит полмиллисекунды работы, и спасать главный поток
+ * не от чего — зато за передачу картины в чужом потоке приходится платить:
+ * кадр идёт до экрана лишний перегон, а каждая нота — лишний перегон обратно.
+ * Поэтому видеочип рисует в окне, а рабочий поток остаётся тому, ради чего
+ * его и заводили: холсту 2D.
+ *
+ * Проверяем не обещание, а дело: видеочип пробуется сборкой той самой
+ * программы, которой рисуется сцена. Знать это надо здесь и сейчас — холст,
+ * отданный рабочему потоку, обратно не забрать.
+ */
+const inWorker = RendererHost.supported && (debugFlags.worker ?? !(wantsGL && supportsGL()));
+
+// Когда рисует рабочий поток, в окне остаётся двойник: он держит сцену, слои
+// и их настройки — с ним работают ввод, звук и панель, — а холста не касается.
 const wantsClock = debugFlags.clock ?? "even";
 const visualizer = new Visualizer({
     canvas: inWorker ? createSurface() : canvas,
