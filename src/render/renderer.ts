@@ -11,6 +11,7 @@ import { Visualizer } from "../core/Visualizer";
 import { DEFAULT_STACK, registerBuiltinLayers } from "../layers";
 import { NotesDirector } from "../layers/notes/NotesDirector";
 import { noteStyle } from "../layers/notes/style";
+import { makeEngine } from "../paint/engine";
 import { registerSceneParams } from "../settings/globalParams";
 import { SettingsStore } from "../settings/SettingsStore";
 import type { ParamGroup } from "../settings/types";
@@ -38,12 +39,13 @@ function start(
     canvas: OffscreenCanvas,
     first: WindowSize,
     settings: Record<string, unknown>,
-    off: readonly string[]
+    off: readonly string[],
+    gl: boolean
 ): void {
     size = first;
     registerBuiltinLayers();
 
-    const view = new Visualizer({ canvas, viewport: () => size });
+    const view = new Visualizer({ canvas, viewport: () => size, engine: (c) => makeEngine(c, gl) });
     const registry = new SettingsStore();
 
     registry.addOwner("quality", () => view.quality.params());
@@ -102,6 +104,7 @@ function report(): void {
         width: canvas.width,
         height: canvas.height,
         profiling: profiler.active,
+        engine: view.engine?.name ?? "нет",
         rows: profiler.rows().map((row) => [row.label, row.ms] as [string, number])
     };
     send({ type: "stats", stats });
@@ -110,7 +113,7 @@ function report(): void {
 self.onmessage = (event: MessageEvent<ToRenderer>): void => {
     const message = event.data;
     if (message.type === "start") {
-        start(message.canvas, message.size, message.settings, message.off);
+        start(message.canvas, message.size, message.settings, message.off, message.gl);
         return;
     }
 

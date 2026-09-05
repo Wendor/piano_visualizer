@@ -19,6 +19,11 @@ export interface DebugFlags {
      */
     worker?: boolean;
     /**
+     * Рисовать видеочипом или холстом 2D. Обычно первое, если он есть;
+     * второе — чтобы сравнить движки на одной машине.
+     */
+    gl?: boolean;
+    /**
      * Подмена настроек: пары «идентификатор — значение как написано».
      * Значение остаётся строкой: какого оно типа, знает только описание
      * параметра, а оно живёт в реестре настроек.
@@ -47,6 +52,11 @@ export function parseDebugFlags(search: string): DebugFlags {
     if (query.has("worker")) {
         const value = query.get("worker") ?? "";
         flags.worker = value !== "0" && value !== "false";
+    }
+
+    if (query.has("gl")) {
+        const value = query.get("gl") ?? "";
+        flags.gl = value !== "0" && value !== "false";
     }
 
     const quality = query.get("quality");

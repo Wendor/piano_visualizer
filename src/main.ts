@@ -1,6 +1,7 @@
 import { Sampler } from "./audio/Sampler";
 import { parseDebugFlags } from "./core/debugFlags";
 import { createSurface } from "./core/surface";
+import { makeEngine } from "./paint/engine";
 import { Visualizer } from "./core/Visualizer";
 import { RendererHost } from "./render/RendererHost";
 import type { Layer } from "./core/types";
@@ -44,9 +45,11 @@ const inWorker = RendererHost.supported && debugFlags.worker !== false;
 
 // Двойник держит сцену, слои и их настройки: с ним работают ввод, звук и
 // панель. Холст ему не нужен — картину собирает рабочий поток.
+const wantsGL = debugFlags.gl !== false;
 const visualizer = new Visualizer({
     canvas: inWorker ? createSurface() : canvas,
-    paints: !inWorker
+    paints: !inWorker,
+    engine: (surface) => makeEngine(surface, wantsGL)
 });
 const scene = visualizer.scene;
 
@@ -170,7 +173,7 @@ visualizer.createInput("input.demo");
 
 // Рисующий поток заводится последним: к этому времени настройки прочитаны,
 // слои собраны и флаги из адреса применены — ему остаётся всё повторить.
-renderer?.start(off);
+renderer?.start(off, wantsGL);
 visualizer.start();
 
 // Точка входа для экспериментов из консоли: visualizer.toggleLayer("effects.sparks")

@@ -4,7 +4,6 @@ import type { ParamSpec } from "../../settings/types";
 import { percent } from "../../settings/types";
 import { GradientBook, bucket, stop } from "../../paint/Gradient";
 import { CLOUD_TILE } from "../../paint/cloud";
-import type { Gradient } from "../../paint/Gradient";
 import { SQUARE } from "../../paint/Painter";
 import type { Corners, Painter } from "../../paint/Painter";
 import type { Tint } from "../../paint/Tint";
@@ -311,8 +310,20 @@ export class NoteStyle {
         const stroke = Math.max(1.4, Math.min(3.6, bar.width * 0.16));
         const { x, top, width, height } = bar;
 
-        if (this.flatFill) p.fillRound(x, top, width, height, radii, this.bodyTint(theme, bar, filled));
-        else p.fillRoundGradient(x, top, width, height, radii, this.body(theme, bar, filled), "x");
+        if (this.flatFill) {
+            p.fillRound(x, top, width, height, radii, this.core(theme, bar, filled));
+        } else {
+            p.fillRoundBand(
+                x,
+                top,
+                width,
+                height,
+                radii,
+                this.edge(theme, bar, filled),
+                this.core(theme, bar, filled),
+                "x"
+            );
+        }
 
         this.drawTexture(p, bar, radii);
 
@@ -376,35 +387,23 @@ export class NoteStyle {
         );
     }
 
-    /** Ровный цвет тела: им заливают ноту там, где градиент не по карману. */
-    private bodyTint(theme: Theme, bar: NoteBar, filled: boolean): Tint {
+    /**
+     * Сердцевина ноты: её видно на всей ширине, и ею же заливают ноту целиком
+     * там, где поперечный градиент не по карману.
+     */
+    private core(theme: Theme, bar: NoteBar, filled: boolean): Tint {
         const hue = bucket(bar.hue, 2);
         const velocity = bucket(bar.velocity, 0.1);
         const alpha = 0.85 + velocity * 0.15;
-        // Ровная заливка берёт цвет сердцевины: именно её видно на всей ширине,
-        // а к краям градиент лишь чуть темнеет.
         return theme.tint(hue, filled ? 58 + velocity * 8 : 50, filled ? alpha : 0.32 * alpha);
     }
 
-    /** Поперечный градиент тела: к краям темнее, в сердцевине ярче. */
-    private body(theme: Theme, bar: NoteBar, filled: boolean): Gradient {
+    /** Край ноты: к краям тело чуть темнее и прозрачнее. */
+    private edge(theme: Theme, bar: NoteBar, filled: boolean): Tint {
         const hue = bucket(bar.hue, 2);
         const velocity = bucket(bar.velocity, 0.1);
-        const key = `${theme.palette.id}|${hue}|${filled ? 1 : 0}|${velocity.toFixed(1)}`;
-
-        return this.gradients.get(key, () => {
-            const alpha = 0.85 + velocity * 0.15;
-            const coreLightness = filled ? 58 + velocity * 8 : 50;
-            const coreAlpha = filled ? alpha : 0.32 * alpha;
-            const edgeLightness = filled ? 44 + velocity * 8 : 42;
-            const edgeAlpha = filled ? 0.9 * alpha : 0.2 * alpha;
-
-            return [
-                stop(0, theme.tint(hue, edgeLightness, edgeAlpha)),
-                stop(0.5, theme.tint(hue, coreLightness, coreAlpha)),
-                stop(1, theme.tint(hue, edgeLightness, edgeAlpha))
-            ];
-        });
+        const alpha = 0.85 + velocity * 0.15;
+        return theme.tint(hue, filled ? 44 + velocity * 8 : 42, filled ? 0.9 * alpha : 0.2 * alpha);
     }
 }
 

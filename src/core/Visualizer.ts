@@ -8,7 +8,7 @@ import { Scene } from "./Scene";
 import type { LayerFault } from "./paint";
 import type { Layer } from "./types";
 import type { Surface } from "./surface";
-import { Canvas2DEngine } from "../paint/canvas/Canvas2DEngine";
+import { makeEngine } from "../paint/engine";
 import type { Engine } from "../paint/Painter";
 import { canvasSize, resolveViewport } from "./viewport";
 import type { InputSource } from "../input/types";
@@ -96,7 +96,7 @@ export class Visualizer {
         // Двойнику движок не заводим вовсе: он держит сцену и настройки ради
         // ввода и звука, а холста не касается — незачем ему ни контекст, ни
         // буфер свечения, ни память под них.
-        this.engine = this.paints ? (options.engine ?? ((c) => new Canvas2DEngine(c)))(this.canvas) : null;
+        this.engine = this.paints ? (options.engine ?? ((c) => makeEngine(c)))(this.canvas) : null;
         this.engine?.setGlowScale(this.quality.profile.glowScale);
         this.quality.events.on("change", () => this.resize());
     }

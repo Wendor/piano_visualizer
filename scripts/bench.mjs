@@ -303,6 +303,7 @@ JSON.stringify((() => {
     fps: +(remote ? remote.fps : v.quality.fps).toFixed(1),
     work: +(remote ? remote.work : v.quality.work).toFixed(2),
     level: remote ? remote.title : v.quality.level,
+    engine: remote ? remote.engine : (v.engine ? v.engine.name : "нет"),
     canvas: remote ? remote.width + "×" + remote.height : v.canvas.width + "×" + v.canvas.height,
     rows: remote
       ? remote.rows.map(([label, ms]) => [label, +ms.toFixed(2)])
@@ -426,7 +427,7 @@ async function main() {
             results.push({ query, result, label: label(query) });
             console.log(`\n── ${label(query)}`);
             console.log(
-                `   ${result.fps} к/с · ${result.work} мс · ${result.level} · холст ${result.canvas}`
+                `   ${result.fps} к/с · ${result.work} мс · ${result.level} · холст ${result.canvas} · ${result.engine}`
             );
             if (result.inWorker) {
                 // Замедлять рабочий поток протокол не умеет: «только для

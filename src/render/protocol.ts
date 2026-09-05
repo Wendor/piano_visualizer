@@ -20,6 +20,8 @@ export interface RenderStats {
     width: number;
     height: number;
     profiling: boolean;
+    /** Чем рисуется сцена: «видеочип» или «холст 2D». */
+    engine: string;
     /** Разбор кадра по слоям: метка и миллисекунды. */
     rows: Array<[string, number]>;
 }
@@ -38,6 +40,8 @@ export type ToRenderer =
           settings: Record<string, ParamValue>;
           /** Слои, которые не надо включать: список из адресной строки. */
           off: readonly string[];
+          /** Разрешено ли рисовать видеочипом. */
+          gl: boolean;
       }
     | { type: "size"; size: WindowSize }
     | { type: "noteOn"; midi: number; velocity: number }

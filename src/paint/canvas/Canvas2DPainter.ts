@@ -43,6 +43,7 @@ export class Canvas2DPainter implements Painter {
     private width = 0;
     private height = 0;
     private readonly baked = new WeakMap<Gradient, Baked>();
+    private readonly bands = new WeakMap<Tint, WeakMap<Tint, Baked>>();
     private readonly patterns = new WeakMap<Surface, CanvasPattern>();
     private readonly shift = typeof DOMMatrix === "function" ? new DOMMatrix() : null;
     private cloudTile: Surface | null = null;
@@ -114,6 +115,25 @@ export class Canvas2DPainter implements Painter {
         const g = this.ctx;
         this.apply();
         g.fillStyle = this.bake(gradient, axis === "x" ? w : h, axis);
+        this.local(x, y);
+        roundRectPath(g, 0, 0, w, h, radii as unknown as [number, number, number, number]);
+        g.fill();
+        this.base();
+    }
+
+    fillRoundBand(
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+        radii: Corners,
+        edge: Tint,
+        core: Tint,
+        axis: Axis
+    ): void {
+        const g = this.ctx;
+        this.apply();
+        g.fillStyle = this.bakeBand(edge, core, axis === "x" ? w : h, axis);
         this.local(x, y);
         roundRectPath(g, 0, 0, w, h, radii as unknown as [number, number, number, number]);
         g.fill();
@@ -245,6 +265,32 @@ export class Canvas2DPainter implements Painter {
                 : this.ctx.createLinearGradient(0, 0, 0, size);
         for (const stop of gradient.stops) made.addColorStop(clampStop(stop.at), stop.tint.css);
         baked.set(key, made);
+        return made;
+    }
+
+    /**
+     * Готовая лента для пары цветов. Ключ — сами цвета: они приходят из кэша
+     * темы и живут между кадрами, поэтому по ним можно искать напрямую, не
+     * собирая строку на каждую ноту.
+     */
+    private bakeBand(edge: Tint, core: Tint, length: number, axis: Axis): CanvasGradient {
+        const size = Math.max(1, Math.round(length));
+        const key = axis === "x" ? size : -size;
+        let byCore = this.bands.get(edge);
+        if (!byCore) this.bands.set(edge, (byCore = new WeakMap()));
+        let bySize = byCore.get(core);
+        if (!bySize) byCore.set(core, (bySize = new Map()));
+        const found = bySize.get(key);
+        if (found) return found;
+
+        const made =
+            axis === "x"
+                ? this.ctx.createLinearGradient(0, 0, size, 0)
+                : this.ctx.createLinearGradient(0, 0, 0, size);
+        made.addColorStop(0, edge.css);
+        made.addColorStop(0.5, core.css);
+        made.addColorStop(1, edge.css);
+        bySize.set(key, made);
         return made;
     }
 

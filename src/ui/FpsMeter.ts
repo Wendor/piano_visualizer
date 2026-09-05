@@ -27,6 +27,7 @@ export function localStats(visualizer: Visualizer): StatsSource {
                 width: canvas.width,
                 height: canvas.height,
                 profiling: profiler.active,
+                engine: visualizer.engine?.name ?? "нет",
                 rows: profiler.rows().map((row) => [row.label, row.ms] as [string, number])
             };
         },
@@ -127,7 +128,7 @@ export class FpsMeter {
         if (stats.profiling) {
             // Размер холста — первое, что стоит увидеть на большом экране:
             // телевизор на 4K просит вчетверо больше пикселей, чем ноутбук.
-            lines.push(`холст ${stats.width}×${stats.height}`);
+            lines.push(`холст ${stats.width}×${stats.height} · ${stats.engine}`);
             lines.push(...profileLines(stats.rows.map(([label, ms]) => ({ label, ms }))));
         }
 
