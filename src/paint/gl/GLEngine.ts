@@ -18,8 +18,11 @@ const PASSES = [0.62, 0.84, 0.81, 0.81];
 /** Сколько фигур влезает в один вызов рисования. */
 const CAPACITY = 4096;
 
+/** Сколько ступеней пирамиды держим наготове. */
+const STEPS = 6;
+
 /**
- * Кратность стороны буфера свечения.
+ * Кратность стороны буфера свечения — двойка в степени числа ступеней.
  *
  * Размытие — это спуск по пирамиде, где каждая ступень вдвое меньше
  * предыдущей. Уменьшение вдвое мягкой выборкой даёт ровно среднее по четырём
@@ -27,10 +30,31 @@ const CAPACITY = 4096;
  * и выборка едет: одни пиксели усредняют пару, другие берут один, а картинка
  * при этом движется. Получается биение: широкий ореол дышит с шагом в пиксель
  * самой грубой ступени, и на сотне двадцати кадрах это видно как мерцание.
- *
- * Поэтому сторону округляем до кратной 2^(число ступеней).
  */
-const GRAIN = 16;
+const GRAIN = 1 << STEPS;
+
+/**
+ * Во сколько раз буфер свечения подробнее доли экрана, которую называет
+ * ступень качества.
+ *
+ * Доля эта родом с холста, где за каждый пиксель буфера платит процессор.
+ * Видеочипу такая экономия не нужна, а расплата за неё видна: свет живёт в
+ * буфере вчетверо мельче экрана, и всё, что есть только в нём — шлейф, ореол —
+ * восстанавливается из клеток по восемь пикселей. Шлейф от этого съезжает
+ * вбок, а ореол лежит плитами и дышит при движении ноты.
+ */
+const DETAIL = 2;
+
+/**
+ * Размах шатра на подъёме, в пикселях ступени-источника.
+ *
+ * Мягкие ступени поднимаются широким: их решётка редкая, и пока нота идёт от
+ * клетки к клетке, ореол на ней перекатывается — вот это перекатывание шатёр и
+ * усредняет. Резкую ступень, наоборот, поднимаем узким: широкий размазал бы
+ * свет, который должен гореть у самой ноты, и она потускнела бы.
+ */
+const WIDE = 1;
+const NEAR = 0.5;
 
 /**
  * Движок на видеочипе.
@@ -69,6 +93,7 @@ export class GLEngine implements Engine, Sink {
         tile: WebGLUniformLocation | null;
     };
     private readonly blitAlpha: WebGLUniformLocation | null;
+    private readonly blitSpread: WebGLUniformLocation | null;
 
     private readonly tile: Surface;
     private readonly scenePainter: GLPainter;
@@ -139,6 +164,7 @@ export class GLEngine implements Engine, Sink {
             tile: gl.getUniformLocation(this.shapes, "u_tile")
         };
         this.blitAlpha = gl.getUniformLocation(this.blit, "u_alpha");
+        this.blitSpread = gl.getUniformLocation(this.blit, "u_spread");
 
         gl.useProgram(this.shapes);
         gl.uniform1i(gl.getUniformLocation(this.shapes, "u_grad"), 0);
@@ -169,8 +195,11 @@ export class GLEngine implements Engine, Sink {
 
     resize(viewport: Viewport): void {
         this.viewport = viewport;
-        const width = grain(viewport.width * this.glowScale);
-        const height = grain(viewport.height * this.glowScale);
+        // Буфер свечения меряется в пикселях полотна, а не окна: восстановление
+        // размытия обязано быть мельче ноты, иначе её след гуляет.
+        const scale = Math.min(1, this.glowScale * DETAIL);
+        const width = grain(this.canvas.width * scale);
+        const height = grain(this.canvas.height * scale);
         if (!this.glow) this.glow = makeTarget(this.gl, width, height);
         else resizeTarget(this.gl, this.glow, width, height);
         this.fitSteps(width, height);
@@ -247,7 +276,8 @@ export class GLEngine implements Engine, Sink {
     bloom(strength: number, passes: number): void {
         const glow = this.glow;
         if (!glow || strength <= 0.01 || !this.glowReady) return;
-        const count = Math.max(1, Math.min(PASSES.length, passes, this.steps.length));
+        const first = this.sharpest();
+        const count = Math.max(1, Math.min(PASSES.length, passes, this.steps.length - first));
         const { gl } = this;
 
         gl.bindVertexArray(this.blitVao);
@@ -256,24 +286,36 @@ export class GLEngine implements Engine, Sink {
 
         let source = glow;
         gl.disable(gl.BLEND);
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < first + count; i++) {
             const step = this.steps[i]!;
-            this.pass(source, step, 1);
+            this.pass(source, step, 1, 0);
             source = step;
         }
 
+        // Подъём: мягкие ступени складываются с резкими.
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE);
-        for (let i = count - 1; i > 0; i--) {
-            this.pass(this.steps[i]!, this.steps[i - 1]!, PASSES[i] ?? 0.8);
+        for (let i = first + count - 1; i > first; i--) {
+            this.pass(this.steps[i]!, this.steps[i - 1]!, PASSES[i - first] ?? 0.8, WIDE);
         }
+
+        // Ниже самой резкой ступени вклада уже нет — только восстановление:
+        // своё содержимое мелких ступеней в свечение не идёт, иначе ореол
+        // стал бы резче и ярче, чем был. Зато решётка грубых ступеней
+        // растворяется, и свет перестаёт лежать плитами.
+        gl.disable(gl.BLEND);
+        for (let i = first; i > 0; i--) this.pass(this.steps[i]!, this.steps[i - 1]!, 1, NEAR);
 
         // Обратно на сцену: сложением, во весь экран, с общей силой свечения.
         // Уровень здесь, а не внутри размытия, — тогда ползунок отзывается
         // сразу, даже в кадре, где размытие взято от прошлого раза.
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-        gl.bindTexture(gl.TEXTURE_2D, this.steps[0]!.texture);
+        const last = this.steps[0]!;
+        gl.bindTexture(gl.TEXTURE_2D, last.texture);
+        gl.uniform2f(this.blitSpread, NEAR / last.width, NEAR / last.height);
         gl.uniform1f(this.blitAlpha, Math.min(1, (PASSES[0] ?? 0.62) * strength));
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -285,13 +327,30 @@ export class GLEngine implements Engine, Sink {
 
     // --- мелочи --------------------------------------------------------------
 
-    private pass(source: Target, into: Target, alpha: number): void {
+    private pass(source: Target, into: Target, alpha: number, tent: number): void {
         const { gl } = this;
         gl.bindFramebuffer(gl.FRAMEBUFFER, into.frame);
         gl.viewport(0, 0, into.width, into.height);
         gl.bindTexture(gl.TEXTURE_2D, source.texture);
+        gl.uniform2f(this.blitSpread, tent / source.width, tent / source.height);
         gl.uniform1f(this.blitAlpha, alpha);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+
+    /**
+     * Ступень пирамиды, с которой начинается вклад в свечение.
+     *
+     * Размытие обязано остаться тем же, каким было при грубом буфере: самой
+     * резкой его ступенью была половина буфера, а буфер — доля экрана. Всё,
+     * что мельче, теперь тоже есть, но идёт только на восстановление.
+     */
+    private sharpest(): number {
+        const glow = this.glow;
+        if (!glow) return 0;
+        const texel = this.viewport.width / glow.width;
+        const was = 2 / Math.max(0.01, this.glowScale);
+        const step = Math.round(Math.log2(was / texel)) - 1;
+        return Math.min(Math.max(0, step), this.steps.length - 1);
     }
 
     /** Программа фигур и её вид сцены. */
@@ -317,7 +376,7 @@ export class GLEngine implements Engine, Sink {
         const { gl } = this;
         let w = width;
         let h = height;
-        for (let i = 0; i < PASSES.length; i++) {
+        for (let i = 0; i < STEPS; i++) {
             w = Math.max(1, w >> 1);
             h = Math.max(1, h >> 1);
             const step = this.steps[i];

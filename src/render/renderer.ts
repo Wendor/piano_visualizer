@@ -84,6 +84,9 @@ function start(
     });
 
     visualizer = view;
+    // Ручка наружу, как `window.visualizer` в окне: сцену рисует этот поток, и
+    // добраться до неё для замера иначе нечем — из окна виден только двойник.
+    (self as unknown as { visualizer: Visualizer }).visualizer = view;
     store = registry;
     view.start();
     send({ type: "viewport", viewport: view.scene.viewport });

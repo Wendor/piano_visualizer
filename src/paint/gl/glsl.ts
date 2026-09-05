@@ -190,9 +190,28 @@ precision highp float;
 in vec2 v_uv;
 uniform sampler2D u_source;
 uniform float u_alpha;
+/**
+ * Размах выборки в долях картинки-источника; ноль — одна выборка.
+ *
+ * На спуске хватает одной: уменьшение вдвое мягкой выборкой и есть среднее по
+ * четырём пикселям. На подъёме одной мало: растягивание — это ломаная по
+ * решётке грубой ступени, и её изломы видны как плиты в широком ореоле.
+ * Шатёр 3x3 их растворяет, и свет ложится гладко.
+ */
+uniform vec2 u_spread;
 out vec4 outColor;
 
 void main() {
-    outColor = texture(u_source, v_uv) * u_alpha;
+    if (u_spread.x <= 0.0) {
+        outColor = texture(u_source, v_uv) * u_alpha;
+        return;
+    }
+    vec2 d = u_spread;
+    vec4 sum = texture(u_source, v_uv) * 4.0;
+    sum += (texture(u_source, v_uv + vec2(d.x, 0.0)) + texture(u_source, v_uv - vec2(d.x, 0.0))) * 2.0;
+    sum += (texture(u_source, v_uv + vec2(0.0, d.y)) + texture(u_source, v_uv - vec2(0.0, d.y))) * 2.0;
+    sum += texture(u_source, v_uv + d) + texture(u_source, v_uv - d);
+    sum += texture(u_source, v_uv + vec2(d.x, -d.y)) + texture(u_source, v_uv + vec2(-d.x, d.y));
+    outColor = sum * (u_alpha / 16.0);
 }
 `;
