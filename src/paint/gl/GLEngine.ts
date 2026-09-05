@@ -19,6 +19,20 @@ const PASSES = [0.62, 0.84, 0.81, 0.81];
 const CAPACITY = 4096;
 
 /**
+ * Кратность стороны буфера свечения.
+ *
+ * Размытие — это спуск по пирамиде, где каждая ступень вдвое меньше
+ * предыдущей. Уменьшение вдвое мягкой выборкой даёт ровно среднее по четырём
+ * пикселям — но только если сторона делится надвое без остатка. Не делится —
+ * и выборка едет: одни пиксели усредняют пару, другие берут один, а картинка
+ * при этом движется. Получается биение: широкий ореол дышит с шагом в пиксель
+ * самой грубой ступени, и на сотне двадцати кадрах это видно как мерцание.
+ *
+ * Поэтому сторону округляем до кратной 2^(число ступеней).
+ */
+const GRAIN = 16;
+
+/**
  * Движок на видеочипе.
  *
  * Сцена состоит из скруглённых прямоугольников с градиентами и складывающимся
@@ -155,8 +169,8 @@ export class GLEngine implements Engine, Sink {
 
     resize(viewport: Viewport): void {
         this.viewport = viewport;
-        const width = Math.max(1, Math.round(viewport.width * this.glowScale));
-        const height = Math.max(1, Math.round(viewport.height * this.glowScale));
+        const width = grain(viewport.width * this.glowScale);
+        const height = grain(viewport.height * this.glowScale);
         if (!this.glow) this.glow = makeTarget(this.gl, width, height);
         else resizeTarget(this.gl, this.glow, width, height);
         this.fitSteps(width, height);
@@ -337,4 +351,9 @@ export class GLEngine implements Engine, Sink {
         gl.vertexAttribPointer(at, 4, gl.FLOAT, false, STRIDE * 4, offset * 4);
         gl.vertexAttribDivisor(at, 1);
     }
+}
+
+/** Ближайшая сторона, которую пирамида поделит надвое до самого низа. */
+function grain(size: number): number {
+    return Math.max(GRAIN, Math.round(size / GRAIN) * GRAIN);
 }

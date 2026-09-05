@@ -116,15 +116,30 @@ vec4 gradientAt(float row, float t) {
 
 void main() {
     float mode = v_params.x;
-    float d = boxDistance(v_local, v_halfSize, v_radii);
 
-    // Сглаживание длиной в пиксель: доля закрытой площади считается по тому же
-    // расстоянию, поэтому край выходит ровно таким же мягким, как у холста.
+    /*
+     * Фигура тоньше пикселя не должна мерцать.
+     *
+     * Доля закрытой площади считается по расстоянию до контура в центре
+     * пикселя. У широкой фигуры это ровно то же, что делает холст. У фигуры
+     * тоньше пикселя — нет: она то попадает в центр и вспыхивает, то проходит
+     * между центрами и гаснет. А в буфере свечения, который вчетверо меньше
+     * экрана, тоньше пикселя почти всё: пылинка, искра, кант ноты.
+     *
+     * Поэтому тонкую фигуру раздуваем до пикселя и во столько же раз гасим:
+     * площадь света остаётся прежней, а мерцать нечему.
+     */
+    float pixel = 0.5 / u_scale;
+    vec2 grown = max(v_halfSize, vec2(pixel));
+    float thin = (v_halfSize.x / grown.x) * (v_halfSize.y / grown.y);
+    float d = boxDistance(v_local, grown, v_radii);
+
     float coverage;
     if (mode == 5.0) {
-        coverage = clamp(0.5 - (abs(d) - v_params.z * 0.5) * u_scale, 0.0, 1.0);
+        float width = max(v_params.z, pixel * 2.0);
+        coverage = clamp(0.5 - (abs(d) - width * 0.5) * u_scale, 0.0, 1.0) * (v_params.z / width);
     } else {
-        coverage = clamp(0.5 - d * u_scale, 0.0, 1.0);
+        coverage = clamp(0.5 - d * u_scale, 0.0, 1.0) * thin;
     }
 
     vec4 color;
