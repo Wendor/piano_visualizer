@@ -25,6 +25,7 @@ function parseArgs(argv) {
         softCanvas: false,
         shot: "",
         browser: "chrome",
+        swiftshader: false,
         prefs: [],
         cases: []
     };
@@ -38,6 +39,7 @@ function parseArgs(argv) {
         else if (arg === "--shot") options.shot = argv[++i];
         else if (arg === "--firefox") options.browser = "firefox";
         else if (arg === "--pref") options.prefs.push(argv[++i]);
+        else if (arg === "--swiftshader") options.swiftshader = true;
         else options.cases.push(arg);
     }
     if (options.cases.length === 0) options.cases.push("quality=low");
@@ -353,7 +355,10 @@ async function main() {
         "--window-size=1280,720",
         "about:blank"
     ];
-    if (options.softCanvas) {
+    if (options.swiftshader) {
+        // Видеочип есть, но он программный: так живёт машина без драйвера.
+        flags.unshift("--use-gl=swiftshader", "--use-angle=swiftshader", "--disable-accelerated-2d-canvas");
+    } else if (options.softCanvas) {
         // Середина между двумя крайностями, и она же — обычный телевизор: холст
         // растеризует процессор, а складывает слои на экране всё-таки видеочип.
         // Разница видна там, где работу можно отдать композитору.
