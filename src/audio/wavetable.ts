@@ -70,11 +70,18 @@ function toJson(source: string): string {
     return out;
 }
 
-const base64 = (text: string): Uint8Array => {
-    const binary = atob(text);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes;
+/**
+ * Base64 → байты руками браузера, а не циклом по символам.
+ *
+ * Банк рояля — это десятки зон по десятку килобайт, и цикл по каждому байту
+ * складывался в одну задачу на сотню миллисекунд. Пока сцену рисовал рабочий
+ * поток, её никто не замечал; в главном это ровно тот рывок на первой ноте.
+ * Адрес `data:` браузер разбирает сам и не в главном потоке, а зон много —
+ * значит, и работа рассыпается на столько же мелких кусков.
+ */
+const base64 = async (text: string): Promise<Uint8Array> => {
+    const response = await fetch(`data:application/octet-stream;base64,${text}`);
+    return new Uint8Array(await response.arrayBuffer());
 };
 
 /** Раскодировать все зоны таблицы. Зоны, которые не читаются, просто выпадают. */
@@ -88,9 +95,9 @@ export async function decodeWavetable(ctx: BaseAudioContext, table: Wavetable): 
 async function decodeZone(ctx: BaseAudioContext, zone: WavetableZone): Promise<Voiceable | null> {
     try {
         const buffer = zone.file
-            ? await ctx.decodeAudioData(base64(zone.file).buffer as ArrayBuffer)
+            ? await ctx.decodeAudioData((await base64(zone.file)).buffer as ArrayBuffer)
             : zone.sample
-              ? pcm(ctx, base64(zone.sample), zone.sampleRate)
+              ? pcm(ctx, await base64(zone.sample), zone.sampleRate)
               : null;
         if (!buffer) return null;
 
