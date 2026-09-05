@@ -6,6 +6,9 @@ import { percent } from "../../settings/types";
 import type { Painter } from "../../paint/Painter";
 import { tint } from "../../paint/Tint";
 
+/** Пыль белая: её яркость — это прозрачность, а не свой цвет у каждой ступени. */
+const DUST = tint("rgba(255, 255, 255, 1)");
+
 export interface DustOptions {
     /** Плотность пыли: 0 — нет, 2 — метель. */
     density: number;
@@ -97,22 +100,23 @@ export class DustLayer extends BaseLayer {
 
     private paint(p: Painter, scene: Scene, scale: number, weight: number): void {
         if (this.motes.length === 0) return;
-        const level = (0.3 + scene.energy * 0.7) * weight;
+        const level = (0.3 + scene.energy * 0.7) * weight * 0.5;
+        if (level <= 0.01) return;
 
         p.blend = "add";
-        // Пылинок сотни, а разбор цвета дорог: раскладываем их по четырём
-        // ступеням яркости и берём четыре цвета за кадр, а не сто.
-        for (let step = 0; step < 4; step++) {
-            const alpha = ((step + 1) / 4) * 0.5 * level;
-            if (alpha <= 0.01) continue;
-            const shade = tint(`rgba(255, 255, 255, ${alpha.toFixed(3)})`);
-            for (const mote of this.motes) {
-                const shine = 0.5 + 0.5 * Math.sin(mote.phase);
-                if (Math.min(3, Math.floor(shine * 4)) !== step) continue;
-                const size = mote.size * scale;
-                p.fill(mote.x, mote.y, size, size, shade);
-            }
+        // Мерцание идёт прозрачностью, а цвет один на всю пыль. Раньше пылинки
+        // раскладывались по четырём ступеням яркости — на холсте разбор цвета
+        // дорог, и четыре строки за кадр были дешевле сотни. Платила за это
+        // сама пыль: мерцала не плавно, а четырьмя ступенями. Общий множитель
+        // строки не разбирает вовсе, так что теперь и дешевле, и плавно —
+        // и проход по пылинкам один вместо четырёх.
+        for (const mote of this.motes) {
+            const shine = 0.5 + 0.5 * Math.sin(mote.phase);
+            p.alpha = (0.25 + shine * 0.75) * level;
+            const size = mote.size * scale;
+            p.fill(mote.x, mote.y, size, size, DUST);
         }
+        p.alpha = 1;
     }
 
     private get target(): number {
