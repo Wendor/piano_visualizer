@@ -15,6 +15,12 @@ import type { Engine, Painter } from "../Painter";
  */
 export class Canvas2DEngine implements Engine {
     readonly name = "холст 2D";
+    /**
+     * Свет размыт и инерционен: между 40 и 60 обновлениями в секунду глаз
+     * разницы не видит, а работа — всё, что слои рисуют в буфер, — сокращается
+     * на треть и больше. Здесь за неё платит процессор, и экономия настоящая.
+     */
+    readonly glowHz = 40;
 
     private readonly ctx: Ctx2D;
     private readonly glow = new GlowBuffer();

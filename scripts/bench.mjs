@@ -61,13 +61,46 @@ class Session {
         this.socket = socket;
         this.nextId = 1;
         this.pending = new Map();
+        /** Жалобы страницы и рабочего потока: их надо видеть, а не гадать. */
+        this.complaints = [];
         socket.addEventListener("message", (event) => {
             const message = JSON.parse(event.data);
+            if (message.id === undefined) return this.event(message);
             const waiter = this.pending.get(message.id);
             if (!waiter) return;
             this.pending.delete(message.id);
             if (message.error) waiter.reject(new Error(message.error.message));
             else waiter.resolve(message.result);
+        });
+    }
+
+    /**
+     * Сообщение без ответа — это событие. Нас интересуют два: подключился
+     * рабочий поток (ему тоже надо включить журнал) и кто-то из них пожаловался.
+     */
+    event(message) {
+        if (message.method === "Target.attachedToTarget") {
+            void this.send("Runtime.enable", {}, message.params.sessionId);
+            return;
+        }
+        if (message.method !== "Runtime.consoleAPICalled") return;
+        const { type, args } = message.params;
+        if (type !== "warning" && type !== "error") return;
+        const text = args.map((arg) => arg.value ?? arg.description ?? arg.type).join(" ");
+        if (!this.complaints.includes(text)) this.complaints.push(text);
+    }
+
+    /**
+     * Слушать журнал страницы и всех её рабочих потоков. Сцену рисует именно
+     * рабочий поток: если он молча откатился на холст или переполнил атлас
+     * градиентов, замер покажет цифры, а причину — нет.
+     */
+    async watchConsole() {
+        await this.send("Runtime.enable");
+        await this.send("Target.setAutoAttach", {
+            autoAttach: true,
+            waitForDebuggerOnStart: false,
+            flatten: true
         });
     }
 
@@ -328,6 +361,7 @@ async function runCase(session, url, spec, seconds, cpu = 1) {
     const query = (cut < 0 ? spec : spec.slice(0, cut)).trim();
     const patch = cut < 0 ? "" : spec.slice(cut + 1).trim();
     const full = `${url}/?profile=1&${query}`;
+    if (session.complaints) session.complaints.length = 0;
     await session.navigate(full);
     await sleep(2500);
     if (cpu > 1) await session.throttle(cpu);
@@ -340,7 +374,8 @@ async function runCase(session, url, spec, seconds, cpu = 1) {
     // замедление процессора рабочего потока не касается.
     const inWorker = Boolean(await session.evaluate("Boolean(window.renderer)"));
     await sleep(seconds * 1000);
-    return { ...JSON.parse(await session.evaluate(COLLECT)), inWorker };
+    const complaints = session.complaints ? [...session.complaints] : [];
+    return { ...JSON.parse(await session.evaluate(COLLECT)), inWorker, complaints };
 }
 
 async function main() {
@@ -401,7 +436,7 @@ async function main() {
             const page = await pageTarget();
             session = await Session.open(page.webSocketDebuggerUrl);
             await session.send("Page.enable");
-            await session.send("Runtime.enable");
+            await session.watchConsole();
             // Без этого первый сценарий грузит звук по сети, а следующие берут
             // его из кэша — и разница между опытами оказывается разницей между
             // холодным и тёплым запуском, а не тем, что мы меряем.
@@ -448,6 +483,7 @@ async function main() {
                 `   звук: ${result.sound.context}, банков ${result.sound.banks} · долгие задачи ${result.long.join(", ") || "нет"}`
             );
             if (result.probe) console.log(`   замер: ${JSON.stringify(result.probe)}`);
+            for (const complaint of result.complaints ?? []) console.log(`   ! ${complaint}`);
             for (const [label, ms] of result.rows.slice(0, 6)) console.log(`   ${label.padEnd(20)} ${ms} мс`);
             if (options.shot) await shoot(session, options.shot.replace("%", String(results.length)));
         }

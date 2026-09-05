@@ -13,13 +13,6 @@ import type { Engine } from "../paint/Painter";
 import { canvasSize, resolveViewport } from "./viewport";
 import type { InputSource } from "../input/types";
 
-/**
- * Частота обновления буфера свечения. Свет размыт и инерционен: между 40 и 60
- * обновлениями в секунду глаз разницы не видит, а работа — размытие плюс всё,
- * что слои рисуют в буфер, — сокращается на треть и больше.
- */
-const GLOW_HZ = 40;
-
 /** Слой добавлен (`added = true`) или удалён. */
 export type LayerHook = (layer: Layer, added: boolean) => void;
 
@@ -85,8 +78,8 @@ export class Visualizer {
     // Событий resize приходит поток, а перестройка холста и кэшей дорогая:
     // на кадр хватает одной.
     private readonly onResize = coalesce(() => this.resize());
-    /** Буфер свечения наполняется реже кадра — см. `GLOW_HZ`. */
-    private readonly glowClock = new Cadence(GLOW_HZ);
+    /** Как часто наполнять буфер свечения. Частоту называет движок. */
+    private readonly glowClock: Cadence;
 
     constructor(options: VisualizerOptions) {
         this.canvas = options.canvas;
@@ -98,6 +91,7 @@ export class Visualizer {
         // буфер свечения, ни память под них.
         this.engine = this.paints ? (options.engine ?? ((c) => makeEngine(c)))(this.canvas) : null;
         this.engine?.setGlowScale(this.quality.profile.glowScale);
+        this.glowClock = new Cadence(this.engine?.glowHz ?? 40);
         this.quality.events.on("change", () => this.resize());
     }
 

@@ -33,6 +33,12 @@ const CAPACITY = 4096;
  */
 export class GLEngine implements Engine, Sink {
     readonly name = "видеочип";
+    /**
+     * Каждый кадр. Наполнить буфер здесь — это несколько сотен фигур в пачке,
+     * то есть почти ничего; а вот ореол, отставший от ноты на три кадра из
+     * ста двадцати, заметен сразу: свет дёргается вслед за резким телом ноты.
+     */
+    readonly glowHz = Infinity;
     readonly gl: WebGL2RenderingContext;
     readonly atlas: GradientAtlas;
     readonly images: ImageBook;
@@ -62,6 +68,8 @@ export class GLEngine implements Engine, Sink {
     private glowReady = false;
 
     private viewport: Viewport = { width: 1, height: 1, dpr: 1 };
+    /** Кто рисует прямо сейчас: сцена или свечение. */
+    private active: GLPainter | null = null;
 
     constructor(private readonly canvas: Surface) {
         const gl = canvas.getContext("webgl2", {
@@ -132,6 +140,9 @@ export class GLEngine implements Engine, Sink {
 
         this.scenePainter = new GLPainter("scene", this);
         this.glowPainter = new GLPainter("glow", this);
+        // Строки атласа кончились — сперва отправить то, что уже собрано на
+        // старых строках, и только потом раздавать их заново.
+        this.atlas.onWrap = () => this.active?.flush();
         this.scenePainter.useCloud(this.tile);
         this.glowPainter.useCloud(this.tile);
     }
@@ -160,6 +171,7 @@ export class GLEngine implements Engine, Sink {
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
         this.scenePainter.open();
+        this.active = this.scenePainter;
         return this.scenePainter;
     }
 
@@ -173,6 +185,7 @@ export class GLEngine implements Engine, Sink {
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         this.glowPainter.open();
+        this.active = this.glowPainter;
         return this.glowPainter;
     }
 
