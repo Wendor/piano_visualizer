@@ -31,7 +31,10 @@ export type EngineSource = (canvas: Surface) => Engine;
 
 export interface VisualizerOptions {
     canvas: Surface;
-    /** Потолок devicePixelRatio: 2 хватает и на Retina. */
+    /**
+     * Жёсткий потолок плотности холста сверх того, что называет ступень
+     * качества. Обычно его нет: потолок — дело ступени.
+     */
     maxDpr?: number;
     /**
      * Чем рисовать. По умолчанию — холст 2D: он есть везде. Видеочип быстрее
@@ -93,7 +96,7 @@ export class Visualizer {
 
     constructor(options: VisualizerOptions) {
         this.canvas = options.canvas;
-        this.maxDpr = options.maxDpr ?? 2;
+        this.maxDpr = options.maxDpr ?? Infinity;
         this.viewportOf = options.viewport ?? windowViewport;
         this.paints = options.paints ?? true;
         this.evenClock = options.clock !== "raw";
@@ -239,7 +242,7 @@ export class Visualizer {
     }
 
     resize(): void {
-        const { renderScale, glowScale, maxPixels } = this.quality.profile;
+        const { renderScale, glowScale, maxPixels, maxDpr } = this.quality.profile;
         // Холст меньше экрана, а CSS-размер прежний: браузер растянет картинку
         // при выводе — это самый дешёвый способ вернуть кадр в бюджет.
         const outer = this.viewportOf();
@@ -247,7 +250,7 @@ export class Visualizer {
             width: outer.width,
             height: outer.height,
             devicePixelRatio: outer.devicePixelRatio,
-            maxDpr: this.maxDpr,
+            maxDpr: Math.min(this.maxDpr, maxDpr),
             renderScale,
             maxPixels
         });

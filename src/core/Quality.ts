@@ -2,7 +2,7 @@ import { Emitter } from "./Emitter";
 import { Smoothness } from "./Smoothness";
 import type { ParamSpec } from "../settings/types";
 
-export type QualityLevel = "high" | "medium" | "low";
+export type QualityLevel = "ultra" | "high" | "medium" | "low";
 export type QualityMode = QualityLevel | "auto";
 
 /**
@@ -26,21 +26,47 @@ export interface QualityProfile {
      * равном единице, и слабый ускоритель на этом встаёт.
      */
     readonly maxPixels: number;
+    /** Потолок плотности холста. Снят только на предельной ступени. */
+    readonly maxDpr: number;
 }
 
 const PROFILES: Readonly<Record<QualityLevel, QualityProfile>> = {
+    // Предельная ступень — та же картинка, что и высшая, но без единого
+    // потолка: холст ровно в физических пикселях экрана, сколько бы их ни
+    // было. Ни плотность, ни площадь не режутся, поэтому телевизор на 4K
+    // получает свои 8.3 мегапикселя, а телефон с тройной плотностью — свои
+    // девять. Автоподбор сюда не поднимается: это выбор человека, который
+    // знает свою машину, а не оценка машины по кадрам.
+    ultra: {
+        renderScale: 1,
+        glowScale: 0.25,
+        bloomPasses: 4,
+        particles: 1,
+        detail: 1,
+        maxPixels: Infinity,
+        maxDpr: Infinity
+    },
     // Потолок высокой ступени выбран так, чтобы ноутбук с Retina проходил
     // целиком (1512×982 при плотности 2 — это 5.9 мегапикселя). Низкая
     // ступень рассчитана на машину без ускорения холста: там платят за
     // каждый пиксель, а полноэкранных проходов у сцены полдюжины.
-    high: { renderScale: 1, glowScale: 0.25, bloomPasses: 4, particles: 1, detail: 1, maxPixels: 6_200_000 },
+    high: {
+        renderScale: 1,
+        glowScale: 0.25,
+        bloomPasses: 4,
+        particles: 1,
+        detail: 1,
+        maxPixels: 6_200_000,
+        maxDpr: 2
+    },
     medium: {
         renderScale: 0.8,
         glowScale: 0.2,
         bloomPasses: 3,
         particles: 0.6,
         detail: 0.5,
-        maxPixels: 3_000_000
+        maxPixels: 3_000_000,
+        maxDpr: 2
     },
     low: {
         renderScale: 0.4,
@@ -48,13 +74,18 @@ const PROFILES: Readonly<Record<QualityLevel, QualityProfile>> = {
         bloomPasses: 2,
         particles: 0.25,
         detail: 0,
-        maxPixels: 900_000
+        maxPixels: 900_000,
+        maxDpr: 2
     }
 };
 
+/** По этой лестнице ходит «авто». Предельной ступени в ней нет: подниматься
+ *  выше физических пикселей экрана незачем, а лезть в них без спроса — значит
+ *  вчетверо увеличить работу на машине, которая об этом не просила. */
 const LADDER: readonly QualityLevel[] = ["low", "medium", "high"];
 
 const TITLES: Readonly<Record<QualityLevel, string>> = {
+    ultra: "предельное",
     high: "высокое",
     medium: "среднее",
     low: "низкое"
@@ -177,6 +208,8 @@ export class Quality {
         this.fastFor = fast ? this.fastFor + seconds : 0;
 
         const index = LADDER.indexOf(this.levelValue);
+        // Ступени вне лестницы «авто» не касается: туда её никто не звал.
+        if (index < 0) return;
         if (this.slowFor >= DROP_AFTER && index > 0) this.shift(index - 1);
         else if (this.fastFor >= RAISE_AFTER && index < LADDER.length - 1) this.shift(index + 1);
     }
@@ -190,6 +223,7 @@ export class Quality {
                 group: "system",
                 variants: [
                     { value: "auto", title: "авто" },
+                    { value: "ultra", title: "предельное" },
                     { value: "high", title: "высокое" },
                     { value: "medium", title: "среднее" },
                     { value: "low", title: "низкое" }

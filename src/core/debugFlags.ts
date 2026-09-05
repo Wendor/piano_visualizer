@@ -36,7 +36,7 @@ export interface DebugFlags {
     set?: Array<[string, string]>;
 }
 
-const MODES: readonly QualityMode[] = ["auto", "high", "medium", "low"];
+const MODES: readonly QualityMode[] = ["auto", "ultra", "high", "medium", "low"];
 
 /**
  * Отладочные флаги из строки запроса.

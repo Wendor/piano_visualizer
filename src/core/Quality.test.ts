@@ -15,6 +15,31 @@ describe("Quality", () => {
         expect(quality.profile.renderScale).toBe(1);
     });
 
+    it("предельная ступень не режет ни плотность холста, ни его площадь", () => {
+        const quality = new Quality();
+        quality.setMode("ultra");
+        expect(quality.level).toBe("ultra");
+        expect(quality.profile.maxDpr).toBe(Infinity);
+        expect(quality.profile.maxPixels).toBe(Infinity);
+        expect(quality.profile.renderScale).toBe(1);
+        // Картинка та же, что на высшей: предельная ступень про пиксели, а не
+        // про то, чем сцену наполнить.
+        expect(quality.profile.detail).toBe(1);
+        expect(quality.profile.bloomPasses).toBe(4);
+    });
+
+    it("«авто» не забирается на предельную ступень и не падает с неё в самый низ", () => {
+        const quality = new Quality();
+        quality.setMode("ultra");
+        // Сколько бы запаса ни было, выше высшей «авто» не поднимается —
+        // и раз ступень выбрана руками, она вообще не его дело.
+        run(quality, 1, 8, 20);
+        expect(quality.level).toBe("ultra");
+
+        quality.setMode("auto");
+        expect(quality.level).toBe("high");
+    });
+
     it("опускает ступень, когда кадры стабильно долгие", () => {
         const quality = new Quality();
         const seen: string[] = [];

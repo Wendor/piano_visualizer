@@ -23,7 +23,11 @@ describe("parseDebugFlags", () => {
     });
 
     it("пропускает ступень, которой нет", () => {
-        expect(parseDebugFlags("?quality=ultra")).toEqual({});
+        expect(parseDebugFlags("?quality=никакое")).toEqual({});
+    });
+
+    it("знает предельную ступень", () => {
+        expect(parseDebugFlags("?quality=ultra")).toEqual({ quality: "ultra" });
     });
 
     it("читает оба параметра сразу", () => {
