@@ -1,4 +1,5 @@
 import { Cadence } from "./Cadence";
+import { FrameClock } from "./FrameClock";
 import { FrameProfiler } from "./FrameProfiler";
 import { paintStack, updateStack, wantsGlow } from "./paint";
 import { Quality } from "./Quality";
@@ -43,6 +44,12 @@ export interface VisualizerOptions {
      */
     viewport?: ViewportSource;
     /**
+     * Шагать по развёртке или по метке времени кадра. По развёртке — обычно:
+     * метка приходит дрожащей, и это дрожание видно как рваный ход. «Как есть»
+     * нужно ровно затем, чтобы это сравнить.
+     */
+    clock?: "even" | "raw";
+    /**
      * Рисовать ли. Когда картину собирает рабочий поток, в главном остаётся
      * двойник: он держит сцену, слои и их настройки — ввод, звук и панель
      * настроек работают с ним, — но холста не касается.
@@ -71,6 +78,9 @@ export class Visualizer {
     private readonly paints: boolean;
     private frame = 0;
     private lastTime = 0;
+    /** Часы кадра: ровный шаг по развёртке вместо дрожащей метки времени. */
+    private readonly clock = new FrameClock();
+    private readonly evenClock: boolean;
     private running = false;
     private readonly layerHooks = new Set<LayerHook>();
     private readonly frameHooks = new Set<(dt: number) => void>();
@@ -86,6 +96,7 @@ export class Visualizer {
         this.maxDpr = options.maxDpr ?? 2;
         this.viewportOf = options.viewport ?? windowViewport;
         this.paints = options.paints ?? true;
+        this.evenClock = options.clock !== "raw";
         // Двойнику движок не заводим вовсе: он держит сцену и настройки ради
         // ввода и звука, а холста не касается — незачем ему ни контекст, ни
         // буфер свечения, ни память под них.
@@ -213,6 +224,8 @@ export class Visualizer {
 
     stop(): void {
         this.running = false;
+        // Пока сцена стоит, время идёт: следующий кадр — первый заново.
+        this.clock.reset();
         dropFrame(this.frame);
         if (typeof window !== "undefined") window.removeEventListener("resize", this.onResize);
     }
@@ -266,8 +279,11 @@ export class Visualizer {
     };
 
     private readonly tick = (now: number): void => {
+        // Промежуток и шаг — разные вещи. Промежуток сырой: счётчик и
+        // автоподбор качества обязаны видеть, как кадры шли на самом деле.
+        // Шаг сцены — по развёртке: дрожание метки времени в картинку не идёт.
         const frameMs = now - this.lastTime;
-        const dt = Math.min(0.05, frameMs / 1000);
+        const dt = Math.min(0.05, this.evenClock ? this.clock.step(now) : frameMs / 1000);
         this.lastTime = now;
 
         const started = performance.now();

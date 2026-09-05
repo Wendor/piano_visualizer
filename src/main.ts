@@ -46,10 +46,12 @@ const inWorker = RendererHost.supported && debugFlags.worker !== false;
 // Двойник держит сцену, слои и их настройки: с ним работают ввод, звук и
 // панель. Холст ему не нужен — картину собирает рабочий поток.
 const wantsGL = debugFlags.gl !== false;
+const wantsClock = debugFlags.clock ?? "even";
 const visualizer = new Visualizer({
     canvas: inWorker ? createSurface() : canvas,
     paints: !inWorker,
-    engine: (surface) => makeEngine(surface, wantsGL)
+    engine: (surface) => makeEngine(surface, wantsGL),
+    clock: wantsClock
 });
 const scene = visualizer.scene;
 
@@ -173,7 +175,7 @@ visualizer.createInput("input.demo");
 
 // Рисующий поток заводится последним: к этому времени настройки прочитаны,
 // слои собраны и флаги из адреса применены — ему остаётся всё повторить.
-renderer?.start(off, wantsGL);
+renderer?.start(off, wantsGL, wantsClock);
 visualizer.start();
 
 // Точка входа для экспериментов из консоли: visualizer.toggleLayer("effects.sparks")

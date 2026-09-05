@@ -24,6 +24,11 @@ export interface DebugFlags {
      */
     gl?: boolean;
     /**
+     * Шагать по развёртке («even», обычное) или по метке времени как есть
+     * («raw»). Нужно, чтобы сравнить одно с другим глазами.
+     */
+    clock?: "even" | "raw";
+    /**
      * Подмена настроек: пары «идентификатор — значение как написано».
      * Значение остаётся строкой: какого оно типа, знает только описание
      * параметра, а оно живёт в реестре настроек.
@@ -58,6 +63,9 @@ export function parseDebugFlags(search: string): DebugFlags {
         const value = query.get("gl") ?? "";
         flags.gl = value !== "0" && value !== "false";
     }
+
+    const clock = query.get("clock");
+    if (clock === "raw" || clock === "even") flags.clock = clock;
 
     const quality = query.get("quality");
     if (quality && MODES.includes(quality as QualityMode)) flags.quality = quality as QualityMode;

@@ -40,12 +40,18 @@ function start(
     first: WindowSize,
     settings: Record<string, unknown>,
     off: readonly string[],
-    gl: boolean
+    gl: boolean,
+    clock: "even" | "raw"
 ): void {
     size = first;
     registerBuiltinLayers();
 
-    const view = new Visualizer({ canvas, viewport: () => size, engine: (c) => makeEngine(c, gl) });
+    const view = new Visualizer({
+        canvas,
+        viewport: () => size,
+        engine: (c) => makeEngine(c, gl),
+        clock
+    });
     const registry = new SettingsStore();
 
     registry.addOwner("quality", () => view.quality.params());
@@ -116,7 +122,7 @@ function report(): void {
 self.onmessage = (event: MessageEvent<ToRenderer>): void => {
     const message = event.data;
     if (message.type === "start") {
-        start(message.canvas, message.size, message.settings, message.off, message.gl);
+        start(message.canvas, message.size, message.settings, message.off, message.gl, message.clock);
         return;
     }
 

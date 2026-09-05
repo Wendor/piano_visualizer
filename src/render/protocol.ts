@@ -42,6 +42,8 @@ export type ToRenderer =
           off: readonly string[];
           /** Разрешено ли рисовать видеочипом. */
           gl: boolean;
+          /** Шагать по развёртке или по метке времени как есть. */
+          clock: "even" | "raw";
       }
     | { type: "size"; size: WindowSize }
     | { type: "noteOn"; midi: number; velocity: number }
